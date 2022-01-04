@@ -4,6 +4,13 @@
 As a basic debug tool, this script allows you to execute the same action
 (which you choose from the pybullet GUI) on the simulation and real robot
 simultaneouly. Make sure to put the real robot on rack before testing.
+
+This script was modified from the original. Here it enables the user to choose the
+joint position targets with a pybullet GUI, but it does not work on the hardware unless
+you are connected with a screen.
+
+TODO how are they able to execute the actions on hardware and on simulation simultaneously? Better to keep them separate.
+TODO squatting, body lowering, body rotation, lift one foot.
 """
 
 import os
