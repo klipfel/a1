@@ -40,7 +40,7 @@ import pybullet_data
 from pybullet_utils import bullet_client
 
 # Motion imitation wrapper.
-from motion_imitation.robots import a1
+os.sys.path.append("/home/unitree/motion_imitation")
 from motion_imitation.robots import robot_config
 
 
@@ -52,6 +52,7 @@ def main():
   is_sim = args.mode == "sim"
   is_hdw = args.mode == "hdw"
   if is_sim:
+      from motion_imitation.robots import a1
       from motion_imitation.envs import env_builder # moved it here since it also imports tensforflow. Don't need this on
       # the hardware.
       # Create an environment for simulation.
