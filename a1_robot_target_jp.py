@@ -77,6 +77,8 @@ def main():
   else:
       logging.error("ERROR: unsupported mode. Either sim or hdw.")
 
+  robot.ReceiveObservation()
+
   initialize = False
   current_motor_angle = np.array(robot.GetMotorAngles())
   desired_motor_angle = np.array([-0.17, 0.75, -1.34,0.21,0.95,-1.44,-0.21,0.73,-1.57,0.17,0.50,-1.33])
