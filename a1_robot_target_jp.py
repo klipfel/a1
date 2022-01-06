@@ -40,7 +40,8 @@ import pybullet_data
 from pybullet_utils import bullet_client
 
 # Motion imitation wrapper.
-os.sys.path.append("/home/unitree/motion_imitation")
+if args.mode == "hdw":  # adds the path to the local motion_imitation wrapper installation.
+    os.sys.path.append("/home/unitree/arnaud/motion_imitation")
 from motion_imitation.robots import robot_config
 
 
@@ -77,8 +78,9 @@ def main():
   # Task specification.
   dim_action = 12
   robot_motor_angles = robot.GetMotorAngles()
-  action = robot_motor_angles
-  print(action)
+  action = np.array([0.0, 0.8, -2.0]*4)
+  print("Target joint position: ", action)
+  input("Press enter to continue...")
 
   # Simulation loop.
   for _ in range(10000):

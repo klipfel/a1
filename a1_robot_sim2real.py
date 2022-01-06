@@ -40,7 +40,8 @@ import pybullet_data
 from pybullet_utils import bullet_client
 
 # Motion imitation wrapper.
-os.sys.path.append("/home/unitree/motion_imitation")
+if args.mode == "hdw":  # adds the path to the local motion_imitation wrapper installation.
+    os.sys.path.append("/home/unitree/arnaud/motion_imitation")
 from motion_imitation.robots import robot_config
 
 
