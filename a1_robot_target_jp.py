@@ -16,6 +16,8 @@ TODO squatting, body lowering, body rotation, lift one foot.
 import os
 import inspect
 import argparse
+from tqdm import tqdm
+import time
 
 currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 parentdir = os.path.dirname(os.path.dirname(currentdir))
@@ -75,19 +77,36 @@ def main():
   else:
       logging.error("ERROR: unsupported mode. Either sim or hdw.")
 
-  # Task specification.
-  dim_action = 12
-  robot_motor_angles = robot.GetMotorAngles()
-  action = np.array([0.0, 0.8, -2.0]*4)
-  print("Target joint position: ", action)
+  initialize = False
+  current_motor_angle = np.array(robot.GetMotorAngles())
+  desired_motor_angle = np.array([-0.17, 0.75, -1.34,0.21,0.95,-1.44,-0.21,0.73,-1.57,0.17,0.50,-1.33])
+  print("Target joint position: ", desired_motor_angle)
   input("Press enter to continue...")
 
   # Simulation loop.
-  for _ in range(10000):
+  for _ in tqdm(range(10)):
+    # Initialization to converge smoothly to first joint position target.
+    if initialize == False:
+      for t in tqdm(range(2000)):
+        blend_ratio = np.minimum(t / 200., 1)
+        action = (1 - blend_ratio
+              ) * current_motor_angle + blend_ratio * desired_motor_angle
+        if is_sim:
+            env.step(action)
+        elif is_hdw:
+            robot.Step(action, robot_config.MotorControlMode.POSITION)
+        time.sleep(0.005)
+      initialize = True
+
+    # Control to other jp.
+    action =  desired_motor_angle
     if is_sim:
         env.step(action)
     elif is_hdw:
         robot.Step(action, robot_config.MotorControlMode.POSITION)
+
+
+    time.sleep(0.005)
 
   if is_hdw:
     robot.Terminate()
