@@ -97,7 +97,7 @@ def main():
     robot.ReceiveObservation()
     current_motor_angle = np.array(robot.GetMotorAngles())
     print("Current joint positions:", current_motor_angle)
-    desired_motor_angle = np.array([0., 1.0, -1.8] * 4)
+    desired_motor_angle = np.array([0., 0.9, -1.8] * 4)
     print("Desired initial joint positions:", desired_motor_angle)
     for t in tqdm(range(300)):
         blend_ratio = np.minimum(t / 200., 1)
@@ -113,6 +113,16 @@ def main():
 
     print("Final joint positions:", np.array(robot.GetMotorAngles()))
     print("Final joint positions error:", np.linalg.norm(np.array(robot.GetMotorAngles())-desired_motor_angle))
+
+    # Move the legs in a sinusoidal curve
+    for t in tqdm(range(1000)):
+        angle_hip = 0.9 + 0.2 * np.sin(2 * np.pi * 0.5 * 0.01 * t)
+        angle_calf = -2 * angle_hip
+        action = np.array([0., angle_hip, angle_calf] * 4)
+        robot.Step(action, robot_config.MotorControlMode.POSITION)
+        time.sleep(0.007)  # control time step in simulation.
+        # print(robot.GetFootContacts())
+        # print(robot.GetBaseVelocity())
 
     if is_hdw:
         robot.Terminate()
