@@ -23,6 +23,8 @@ os.sys.path.insert(0, parentdir)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-v", "--visualize", help='visualization boolean.', type=bool, default=True)
+# TODO rack in hardware mode.
+parser.add_argument("-r", "--rack", help='rack boolean. If true the robot is considered to be on a rack. For now only in simulation', type=bool, default=True)
 parser.add_argument("-t", "--test_type", help='Type of the test: static.', type=str, default="static")
 parser.add_argument("-m", "--mode", help='sim or hdw', type=str, default="sim")
 args = parser.parse_args()
@@ -31,8 +33,13 @@ args = parser.parse_args()
 #from absl import app  # conflict with argpase # TODO fix it
 from absl import logging
 import numpy as np
-import pybullet as p  # pytype: disable=import-error
 
+# Pybullet.
+import pybullet  # pytype:disable=import-error
+import pybullet_data
+from pybullet_utils import bullet_client
+
+# Motion imitation wrapper.
 from motion_imitation.envs import env_builder
 from motion_imitation.robots import a1
 from motion_imitation.robots import robot_config
@@ -46,37 +53,40 @@ def main():
   is_sim = args.mode == "sim"
   is_hdw = args.mode == "hdw"
   if is_sim:
+      # Create an environment for simulation.
       env = env_builder.build_regular_env(
-          robot_class=a1.A1,
+          robot_class=a1.A1,  # robot class for simulation
           motor_control_mode=robot_config.MotorControlMode.POSITION,
-          on_rack=True,
+          on_rack=args.rack,
           enable_rendering=args.visualize,
           wrap_trajectory_generator=False)
+      robot = env.robot
   elif is_hdw:
       from motion_imitation.robots import a1_robot  # imports the robot interface in the case where the code is
       # run on hardware.
-      env = env_builder.build_regular_env(
-          robot_class=a1_robot.A1Robot,
-          motor_control_mode=robot_config.MotorControlMode.POSITION,
-          on_rack=False,
-          enable_rendering=False,
-          wrap_trajectory_generator=False)
+      # No environment is needed for hardware tests.
+      p = bullet_client.BulletClient(connection_mode=pybullet.DIRECT)
+      p.setAdditionalSearchPath(pybullet_data.getDataPath())
+      # Hardware class for the robot. (wrapper)
+      robot = a1_robot.A1Robot(pybullet_client=p, action_repeat=1)
   else:
       logging.error("ERROR: unsupported mode. Either sim or hdw.")
 
   # Task specification.
-  action_low, action_high = env.action_space.low, env.action_space.high
-  dim_action = action_low.shape[0]  # joint number.
-  robot_motor_angles = env.robot.GetMotorAngles()
+  dim_action = 12
+  robot_motor_angles = robot.GetMotorAngles()
   action = robot_motor_angles
   print(action)
 
   # Simulation loop.
   for _ in range(10000):
-    env.step(action)
+    if is_sim:
+        env.step(action)
+    elif is_hdw:
+        robot.Step(action, robot_config.MotorControlMode.POSITION)
 
   if is_hdw:
-    env.Terminate()
+    robot.Terminate()
 
 
 if __name__ == '__main__':
