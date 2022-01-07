@@ -99,6 +99,11 @@ def main():
     print("Current joint positions:", current_motor_angle)
     desired_motor_angle = np.array([0., 0.9, -1.8] * 4)
     print("Desired initial joint positions:", desired_motor_angle)
+
+    if is_hdw:
+        # Waits for the control signals to be sent. Avoid immediate shutdown.
+        time.sleep(1)
+
     for t in tqdm(range(300)):
         blend_ratio = np.minimum(t / 200., 1)
         action = (1 - blend_ratio
@@ -116,7 +121,8 @@ def main():
 
     # Move the legs in a sinusoidal curve
     for t in tqdm(range(1000)):
-        angle_hip = 0.9 + 0.2 * np.sin(2 * np.pi * 0.5 * 0.01 * t)
+        f = 0.1
+        angle_hip = 0.9 + 0.2 * np.sin(2 * np.pi * f * 0.01 * t)
         angle_calf = -2 * angle_hip
         action = np.array([0., angle_hip, angle_calf] * 4)
         robot.Step(action, robot_config.MotorControlMode.POSITION)

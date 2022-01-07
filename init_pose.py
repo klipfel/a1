@@ -20,6 +20,11 @@ parser.add_argument("-v", "--visualize", help='visualization boolean.', type=boo
 parser.add_argument("-r", "--rack", help='rack boolean. If true the robot is considered to be on a rack. For now only in simulation', type=bool, default=True)
 parser.add_argument("-t", "--test_type", help='Type of the test: static.', type=str, default="static")
 parser.add_argument("-m", "--mode", help='sim or hdw', type=str, default="sim")
+parser.add_argument("--kp", help='Proportional for thigh and calf.', type=float, default=80.0)
+parser.add_argument("--kpa", help='Proportional for hip.', type=float, default=80.0)
+parser.add_argument("--kd", help='Derivative for thigh and calf.', type=float, default=1.0)
+parser.add_argument("--kda", help='Derivative for hip.', type=float, default=1.0)
+parser.add_argument("--dt", help="Control time step.", type=float, default=0.025)
 args = parser.parse_args()
 
 
@@ -46,6 +51,11 @@ def main():
     is_sim_env = args.mode == "simEnv"
     is_sim_gui = args.mode == "simGui"
     is_hdw = args.mode == "hdw"
+    # Gains.
+    KP = args.kp
+    KD = args.kd
+    KPA = args.kpa
+    KDA = args.kda
     # Creates a simulation using a gym environment.
     if is_sim_env:
         from motion_imitation.robots import a1
@@ -70,6 +80,10 @@ def main():
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
         # Hardware class for the robot. (wrapper)
         robot = a1_robot.A1Robot(pybullet_client=p, action_repeat=1)
+        robot.motor_kps = np.array([KPA,KP,KP] * 4)
+        robot.motor_kds = np.array([KDA,KD,KD] * 4)
+        print("Robot Kps: ", robot.motor_kps)
+        print("Robot Kds: ", robot.motor_kds)
     # simulation using the pybullet GUI, no gym environment. Does not use tf, or any learning.
     elif args.mode == "simGui":
         from motion_imitation.robots import a1
@@ -90,6 +104,10 @@ def main():
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
         p.loadURDF("plane.urdf")
         robot = a1.A1(pybullet_client=p, action_repeat=1)
+        robot.motor_kps = np.array([KPA,KP,KP] * 4)
+        robot.motor_kds = np.array([KDA,KD,KD] * 4)
+        print("Robot Kps: ", robot.motor_kps)
+        print("Robot Kds: ", robot.motor_kds)
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING,1)
     else:
         logging.error("ERROR: unsupported mode. Either sim or hdw.")
@@ -99,6 +117,11 @@ def main():
     print("Current joint positions:", current_motor_angle)
     desired_motor_angle = np.array([0., 1.0, -1.8] * 4)
     print("Desired initial joint positions:", desired_motor_angle)
+
+    if is_hdw:
+        # Waits for the control signals to be sent. Avoid immediate shutdown.
+        time.sleep(1)
+
     for t in tqdm(range(300)):
         blend_ratio = np.minimum(t / 200., 1)
         action = (1 - blend_ratio
@@ -109,7 +132,7 @@ def main():
             robot.Step(action, robot_config.MotorControlMode.POSITION)
         else:
             logging.error("ERROR: unsupported mode. Either sim or hdw.")
-        time.sleep(0.005)
+        time.sleep(args.dt)  # the example used 0.005.
 
     print("Final joint positions:", np.array(robot.GetMotorAngles()))
     print("Final joint positions error:", np.linalg.norm(np.array(robot.GetMotorAngles())-desired_motor_angle))
