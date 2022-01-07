@@ -26,6 +26,7 @@ parser.add_argument("--kpa", help='Proportional for hip.', type=float, default=1
 parser.add_argument("--kd", help='Derivative for thigh and calf.', type=float, default=1.0)
 parser.add_argument("--kda", help='Derivative for hip.', type=float, default=1.0)
 parser.add_argument("--dt", help="Control time step.", type=float, default=0.01)
+parser.add_argument("--nsteps", help="Total control steps to reach joint position.", type=int, default=300)
 args = parser.parse_args()
 
 
@@ -128,7 +129,7 @@ def main():
 
     print("Control starts...")
     # input("Proceed to control? Press a key.")
-    for t in tqdm(range(300)):
+    for t in tqdm(range(args.n_steps)):
         blend_ratio = np.minimum(t / 200., 1)
         action = (1 - blend_ratio
                   ) * current_motor_angle + blend_ratio * desired_motor_angle
