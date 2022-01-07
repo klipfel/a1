@@ -126,6 +126,7 @@ def main():
             robot.Step(current_motor_angle, robot_config.MotorControlMode.POSITION)
             time.sleep(0.01)
 
+    print("Control starts...")
     # input("Proceed to control? Press a key.")
     for t in tqdm(range(300)):
         blend_ratio = np.minimum(t / 200., 1)
