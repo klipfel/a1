@@ -25,7 +25,7 @@ parser.add_argument("--kp", help='Proportional for thigh and calf.', type=float,
 parser.add_argument("--kpa", help='Proportional for hip.', type=float, default=100.0)
 parser.add_argument("--kd", help='Derivative for thigh and calf.', type=float, default=1.0)
 parser.add_argument("--kda", help='Derivative for hip.', type=float, default=1.0)
-parser.add_argument("--dt", help="Control time step.", type=float, default=0.005)
+parser.add_argument("--dt", help="Control time step.", type=float, default=0.01)
 args = parser.parse_args()
 
 
@@ -119,12 +119,14 @@ def main():
     desired_motor_angle = np.array([0., 1.0, -1.8] * 4)
     print("Desired initial joint positions:", desired_motor_angle)
 
-    # if is_hdw:
-    #     # Waits for the control signals to be sent. Avoid immediate shutdown.
-    #     print("Waiting 1 sec.")
-    #     time.sleep(1)
+    if is_hdw:
+        # Static control to the same joint position the robot has. This is a test.
+        print("TEST: Keeps current configuration for 1 sec.")
+        for _ in tqdm(range(100)):
+            robot.Step(current_motor_angle, robot_config.MotorControlMode.POSITION)
+            time.sleep(0.01)
 
-    input("Proceed to control? Press a key.")
+    # input("Proceed to control? Press a key.")
     for t in tqdm(range(300)):
         blend_ratio = np.minimum(t / 200., 1)
         action = (1 - blend_ratio
