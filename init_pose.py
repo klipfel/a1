@@ -120,8 +120,10 @@ def main():
 
     if is_hdw:
         # Waits for the control signals to be sent. Avoid immediate shutdown.
+        print("Waiting 1 sec.")
         time.sleep(1)
 
+    input("Proceed to control? Press a key.")
     for t in tqdm(range(300)):
         blend_ratio = np.minimum(t / 200., 1)
         action = (1 - blend_ratio
