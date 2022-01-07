@@ -20,11 +20,12 @@ parser.add_argument("-v", "--visualize", help='visualization boolean.', type=boo
 parser.add_argument("-r", "--rack", help='rack boolean. If true the robot is considered to be on a rack. For now only in simulation', type=bool, default=True)
 parser.add_argument("-t", "--test_type", help='Type of the test: static.', type=str, default="static")
 parser.add_argument("-m", "--mode", help='sim or hdw', type=str, default="sim")
-parser.add_argument("--kp", help='Proportional for thigh and calf.', type=float, default=80.0)
-parser.add_argument("--kpa", help='Proportional for hip.', type=float, default=80.0)
+# TODO why do the gains not have any effect in simulation?
+parser.add_argument("--kp", help='Proportional for thigh and calf.', type=float, default=100.0)
+parser.add_argument("--kpa", help='Proportional for hip.', type=float, default=100.0)
 parser.add_argument("--kd", help='Derivative for thigh and calf.', type=float, default=1.0)
 parser.add_argument("--kda", help='Derivative for hip.', type=float, default=1.0)
-parser.add_argument("--dt", help="Control time step.", type=float, default=0.025)
+parser.add_argument("--dt", help="Control time step.", type=float, default=0.005)
 args = parser.parse_args()
 
 
@@ -118,10 +119,10 @@ def main():
     desired_motor_angle = np.array([0., 1.0, -1.8] * 4)
     print("Desired initial joint positions:", desired_motor_angle)
 
-    if is_hdw:
-        # Waits for the control signals to be sent. Avoid immediate shutdown.
-        print("Waiting 1 sec.")
-        time.sleep(1)
+    # if is_hdw:
+    #     # Waits for the control signals to be sent. Avoid immediate shutdown.
+    #     print("Waiting 1 sec.")
+    #     time.sleep(1)
 
     input("Proceed to control? Press a key.")
     for t in tqdm(range(300)):
