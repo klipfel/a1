@@ -54,6 +54,7 @@ def main():
     is_sim_env = args.mode == "simEnv"
     is_sim_gui = args.mode == "simGui"
     is_hdw = args.mode == "hdw"
+    nsteps = args.nsteps
     # Gains.
     KP = args.kp
     KD = args.kd
@@ -130,8 +131,8 @@ def main():
 
     print("Control starts...")
     # input("Proceed to control? Press a key.")
-    for t in tqdm(range(args.nsteps)):
-        blend_ratio = np.minimum(t / args.sp, 1)
+    for t in tqdm(range(nsteps)):
+        blend_ratio = np.minimum(t / (args.sp*nsteps), 1)
         action = (1 - blend_ratio
                   ) * current_motor_angle + blend_ratio * desired_motor_angle
         if is_sim_env:
