@@ -100,10 +100,6 @@ def main():
     desired_motor_angle = np.array([0., 0.9, -1.8] * 4)
     print("Desired initial joint positions:", desired_motor_angle)
 
-    if is_hdw:
-        # Waits for the control signals to be sent. Avoid immediate shutdown.
-        time.sleep(1)
-
     for t in tqdm(range(300)):
         blend_ratio = np.minimum(t / 200., 1)
         action = (1 - blend_ratio
