@@ -23,10 +23,11 @@ parser.add_argument("-m", "--mode", help='sim or hdw', type=str, default="sim")
 # TODO why do the gains not have any effect in simulation?
 parser.add_argument("--kp", help='Proportional for thigh and calf.', type=float, default=100.0)
 parser.add_argument("--kpa", help='Proportional for hip.', type=float, default=100.0)
-parser.add_argument("--kd", help='Derivative for thigh and calf.', type=float, default=1.0)
-parser.add_argument("--kda", help='Derivative for hip.', type=float, default=1.0)
+parser.add_argument("--kd", help='Derivative for thigh and calf.', type=float, default=0.5)
+parser.add_argument("--kda", help='Derivative for hip.', type=float, default=0.5)
 parser.add_argument("--dt", help="Control time step.", type=float, default=0.01)
 parser.add_argument("--nsteps", help="Total control steps to reach joint position.", type=int, default=300)
+parser.add_argument("--sp", help="Smoothing percentage.", type=float, default=2/3)
 args = parser.parse_args()
 
 
@@ -130,7 +131,7 @@ def main():
     print("Control starts...")
     # input("Proceed to control? Press a key.")
     for t in tqdm(range(args.nsteps)):
-        blend_ratio = np.minimum(t / 200., 1)
+        blend_ratio = np.minimum(t / args.sp, 1)
         action = (1 - blend_ratio
                   ) * current_motor_angle + blend_ratio * desired_motor_angle
         if is_sim_env:
