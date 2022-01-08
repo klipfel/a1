@@ -1,7 +1,7 @@
 """
-
-Convergence to an initial/single joint position.
-
+This example implements a squatting behavior on the robot and in simulation.
+References:
+    - https://github.com/google-research/motion_imitation/blob/d0e7b963c5a301984352d25a3ee0820266fa4218/motion_imitation/examples/a1_robot_exercise.py
 """
 
 import os
@@ -9,6 +9,7 @@ import inspect
 import argparse
 from tqdm import tqdm
 import time
+from utilities.control_util import error
 
 currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 parentdir = os.path.dirname(os.path.dirname(currentdir))
@@ -20,6 +21,15 @@ parser.add_argument("-v", "--visualize", help='visualization boolean.', type=boo
 parser.add_argument("-r", "--rack", help='rack boolean. If true the robot is considered to be on a rack. For now only in simulation', type=bool, default=True)
 parser.add_argument("-t", "--test_type", help='Type of the test: static.', type=str, default="static")
 parser.add_argument("-m", "--mode", help='sim or hdw', type=str, default="sim")
+# TODO why do the gains not have any effect in simulation?
+parser.add_argument("--kp", help='Proportional for thigh and calf.', type=float, default=100.0)
+parser.add_argument("--kpa", help='Proportional for hip.', type=float, default=100.0)
+parser.add_argument("--kd", help='Derivative for thigh and calf.', type=float, default=0.5)
+parser.add_argument("--kda", help='Derivative for hip.', type=float, default=0.5)
+parser.add_argument("--dt", help="Control time step.", type=float, default=0.01)
+parser.add_argument("--nsteps", help="Total control steps to reach joint position.", type=int, default=3000)
+parser.add_argument("--sp", help="Smoothing percentage.", type=float, default=2/3)
+parser.add_argument("-f", help="Sine curve frequency.", type=float, default=0.1)
 args = parser.parse_args()
 
 
@@ -46,6 +56,12 @@ def main():
     is_sim_env = args.mode == "simEnv"
     is_sim_gui = args.mode == "simGui"
     is_hdw = args.mode == "hdw"
+    nsteps = args.nsteps
+    # Gains.
+    KP = args.kp
+    KD = args.kd
+    KPA = args.kpa
+    KDA = args.kda
     # Creates a simulation using a gym environment.
     if is_sim_env:
         from motion_imitation.robots import a1
@@ -70,6 +86,10 @@ def main():
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
         # Hardware class for the robot. (wrapper)
         robot = a1_robot.A1Robot(pybullet_client=p, action_repeat=1)
+        robot.motor_kps = np.array([KPA,KP,KP] * 4)
+        robot.motor_kds = np.array([KDA,KD,KD] * 4)
+        print("Robot Kps: ", robot.motor_kps)
+        print("Robot Kds: ", robot.motor_kds)
     # simulation using the pybullet GUI, no gym environment. Does not use tf, or any learning.
     elif args.mode == "simGui":
         from motion_imitation.robots import a1
@@ -90,6 +110,10 @@ def main():
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
         p.loadURDF("plane.urdf")
         robot = a1.A1(pybullet_client=p, action_repeat=1)
+        robot.motor_kps = np.array([KPA,KP,KP] * 4)
+        robot.motor_kds = np.array([KDA,KD,KD] * 4)
+        print("Robot Kps: ", robot.motor_kps)
+        print("Robot Kds: ", robot.motor_kds)
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING,1)
     else:
         logging.error("ERROR: unsupported mode. Either sim or hdw.")
@@ -100,8 +124,9 @@ def main():
     desired_motor_angle = np.array([0., 0.9, -1.8] * 4)
     print("Desired initial joint positions:", desired_motor_angle)
 
+    print("Control to initial target starts...")
     for t in tqdm(range(300)):
-        blend_ratio = np.minimum(t / 200., 1)
+        blend_ratio = np.minimum(t / (args.sp*nsteps), 1)
         action = (1 - blend_ratio
                   ) * current_motor_angle + blend_ratio * desired_motor_angle
         if is_sim_env:
@@ -110,17 +135,17 @@ def main():
             robot.Step(action, robot_config.MotorControlMode.POSITION)
         else:
             logging.error("ERROR: unsupported mode. Either sim or hdw.")
-        time.sleep(0.005)
+        time.sleep(args.dt)  # the example used 0.005.
 
     print("Final joint positions:", np.array(robot.GetMotorAngles()))
     print("Final joint positions error:", np.linalg.norm(np.array(robot.GetMotorAngles())-desired_motor_angle))
 
-    # Move the legs in a sinusoidal curve
-    for t in tqdm(range(1000)):
-        f = 0.1
-        angle_hip = 0.9 + 0.2 * np.sin(2 * np.pi * f * 0.01 * t)
-        angle_calf = -2 * angle_hip
-        action = np.array([0., angle_hip, angle_calf] * 4)
+    print("Starts the squatting behavior...")
+    # Move the legs in a sinusoidal curve.
+    for t in tqdm(range(args.nsteps)):
+        angle_thigh = 0.9 + 0.2 * np.sin(2 * np.pi * args.f * 0.01 * t)
+        angle_calf = -2 * angle_thigh
+        action = np.array([0., angle_thigh, angle_calf] * 4)
         robot.Step(action, robot_config.MotorControlMode.POSITION)
         time.sleep(0.007)  # control time step in simulation.
         # print(robot.GetFootContacts())
