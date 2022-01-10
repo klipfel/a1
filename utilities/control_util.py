@@ -25,8 +25,8 @@ class ControlFramework:
         parser.add_argument("-t", "--test_type", help='Type of the test: static.', type=str, default="static")
         parser.add_argument("-m", "--mode", help='sim or hdw', type=str, default="sim")
         # TODO why do the gains not have any effect in simulation?
-        parser.add_argument("--kp", help='Proportional for thigh and calf.', type=float, default=100.0)
-        parser.add_argument("--kpa", help='Proportional for hip.', type=float, default=100.0)
+        parser.add_argument("--kp", help='Proportional for thigh and calf.', type=float, default=40.0)
+        parser.add_argument("--kpa", help='Proportional for hip.', type=float, default=40.0)
         parser.add_argument("--kd", help='Derivative for thigh and calf.', type=float, default=0.5)
         parser.add_argument("--kda", help='Derivative for hip.', type=float, default=0.5)
         parser.add_argument("--dt", help="Control time step.", type=float, default=0.01)
