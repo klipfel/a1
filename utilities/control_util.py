@@ -9,8 +9,6 @@ import time
 import pybullet  # pytype:disable=import-error
 import pybullet_data
 from pybullet_utils import bullet_client
-# Motion imitation wrapper.
-from motion_imitation.robots import robot_config
 
 
 def error(x, y):
@@ -52,6 +50,8 @@ class ControlFramework:
         if is_sim_env:
             from motion_imitation.robots import a1
             from motion_imitation.envs import env_builder # moved it here since it also imports tensforflow. Don't need this on
+            # Motion imitation wrapper.
+            from motion_imitation.robots import robot_config
             # the hardware.
             # Create an environment for simulation.
             # TODO why is the environment like if the robot was always on a rack? I used another approach in sim2. It does
