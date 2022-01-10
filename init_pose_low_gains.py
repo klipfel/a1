@@ -18,15 +18,15 @@ import numpy as np
 
 from utilities.control_util import ControlFramework
 
+cf = ControlFramework()
 
 # Motion imitation wrapper.
-if args.mode == "hdw":  # adds the path to the local motion_imitation wrapper installation.
+if cf.args.mode == "hdw":  # adds the path to the local motion_imitation wrapper installation.
     os.sys.path.append("/home/unitree/arnaud/motion_imitation")
 from motion_imitation.robots import robot_config
 
 
 def main():
-    cf = ControlFramework()
     current_motor_angle = np.array(cf.robot.GetMotorAngles())
     print("Current joint positions:", current_motor_angle)
     desired_motor_angle = np.array([0., 1.0, -1.8] * 4)
