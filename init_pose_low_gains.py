@@ -18,6 +18,10 @@ import numpy as np
 
 from utilities.control_util import ControlFramework
 
+
+# Motion imitation wrapper.
+if args.mode == "hdw":  # adds the path to the local motion_imitation wrapper installation.
+    os.sys.path.append("/home/unitree/arnaud/motion_imitation")
 from motion_imitation.robots import robot_config
 
 
