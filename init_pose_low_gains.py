@@ -29,8 +29,7 @@ from motion_imitation.robots import robot_config
 def main():
     current_motor_angle = np.array(cf.robot.GetMotorAngles())
     print("Current joint positions:", current_motor_angle)
-    desired_motor_angle = np.array([0., 1.0, -1.8] * 4)
-    print("Desired initial joint positions:", desired_motor_angle)
+    desired_motor_angle = cf.process_single_joint_target()
 
     # Static control to the same joint position the robot has. This is a test.
     print("TEST: Keeps current configuration for 1 sec.")

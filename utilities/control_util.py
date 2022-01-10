@@ -32,6 +32,7 @@ class ControlFramework:
         parser.add_argument("--dt", help="Control time step.", type=float, default=0.01)
         parser.add_argument("--nsteps", help="Total control steps to reach joint position.", type=int, default=300)
         parser.add_argument("--sp", help="Smoothing percentage.", type=float, default=2/3)
+        parser.add_argument("--sjt", help="Single joint target specification for one leg.", type=float, default=None)
         args = parser.parse_args()
         logging.info("WARNING: this code executes low-level controller on the robot.")
         logging.info("Make sure the robot is hang on rack before proceeding.")
@@ -113,3 +114,14 @@ class ControlFramework:
         self.is_sim_env = is_sim_env
         self.is_sim_gui = is_sim_gui
         self.is_hdw = is_hdw
+
+    def process_single_joint_target(self):
+        """Process the single joint target specification."""
+        sjt = None
+        if self.args.sjt is None:
+            sjt = np.array([0., 1.0, -1.8] * 4)
+        else:
+            assert(len(self.args.sjt) == 3)
+            sjt = np.array(self.args.sjt*4)
+        print("Single joint target set to: ", sjt)
+        return sjt
