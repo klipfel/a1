@@ -32,7 +32,7 @@ class ControlFramework:
         parser.add_argument("--dt", help="Control time step.", type=float, default=0.01)
         parser.add_argument("--nsteps", help="Total control steps to reach joint position.", type=int, default=300)
         parser.add_argument("--sp", help="Smoothing percentage.", type=float, default=2/3)
-        parser.add_argument("--sjt", help="Single joint target specification for one leg.", type=float, default=None)
+        parser.add_argument("--sjt", nargs="+", help="Single joint target specification for one leg.", type=float, default=None)
         args = parser.parse_args()
         logging.info("WARNING: this code executes low-level controller on the robot.")
         logging.info("Make sure the robot is hang on rack before proceeding.")
