@@ -197,14 +197,26 @@ class ObservationParser:
         self.rp_buffer = None
         self.foot_positions_in_base_frame_buffer = None
         self.measurements_std_dict = {}
+        self.history_shape = None
+        self.obs_shape = None
+        self.motor_angles = None
+        self.motor_angle_rates = None
+        self.rpy = None
+        self.rpy_rate = None
+        self.foot_positions_in_base_frame = None
+        self.obs = None
 
     def observe(self):
         self.motor_angles = self.robot.GetMotorAngles()  # in [-\pi;+\pi]
         self.motor_angle_rates = self.robot.GetMotorVelocities()
+        # TODO is the angular vel here the same as the one given in Raisim, they might be using quaternions ....
+        # TODO but it has 3 coordinates so I guess it is the true angular vel. Difference between ang vel returned by simulation
+        # TODO and the one computed.
         if self.args.mode == "hdw":
             self.rpy = np.array(self.robot.GetBaseRollPitchYaw())
         else:
             self.rpy = self.robot.GetBaseRollPitchYaw()
+        self.rpy_rate = self.robot.GetBaseRollPitchYawRate()
         self.foot_positions_in_base_frame = self.robot.GetFootPositionsInBaseFrame()
         # Prepares measurements for the policy.
         if self.current_obs is not None:
@@ -214,6 +226,7 @@ class ObservationParser:
         self.current_obs = np.concatenate((self.motor_angles,
                                           self.motor_angle_rates,
                                           self.rpy[:2],
+                                          self.rpy_rate,
                                           self.foot_positions_in_base_frame),
                                           axis=None)
         # float32 for pytorch.
@@ -221,10 +234,13 @@ class ObservationParser:
         # Put observations array in one row for policy.
         np.reshape(self.current_obs, (1, -1))
         if self.past_obs is None:  # first time reading obs.
-            self.past_obs = np.zeros(self.current_obs.shape)
+            self.history_shape = (1, self.current_obs.shape[1]-24)
+            self.past_obs = np.zeros(self.history_shape, dtype=np.float32)
         else:
-            self.past_obs = tmp
+            self.past_obs = tmp[:, 24:]  # removes the joint information only.
         self.obs = np.hstack((self.current_obs, self.past_obs))
+        self.obs_shape = self.obs.shape
+        print(self.obs_shape)
         return self.obs
 
     def observe_record(self):
@@ -237,14 +253,18 @@ class ObservationParser:
             self.foot_positions_in_base_frame_buffer = self.foot_positions_in_base_frame.flatten().astype(np.float32)
         else:  # adds in buffer.
             self.motor_angles_buffer = np.vstack((self.motor_angles_buffer,
-                                                       self.motor_angles.astype(np.float32)))
+                                                  self.motor_angles.astype(np.float32)))
             self.motor_angle_rates_buffer = np.vstack((self.motor_angle_rates_buffer,
-                                                            self.motor_angle_rates.astype(np.float32)))
+                                                       self.motor_angle_rates.astype(np.float32)))
             self.rp_buffer = np.vstack((self.rp_buffer,
-                                             self.rpy[:2].astype(np.float32)))
+                                        self.rpy[:2].astype(np.float32)))
             self.foot_positions_in_base_frame_buffer = np.vstack((self.foot_positions_in_base_frame_buffer,
-                                                                       self.foot_positions_in_base_frame.flatten().astype(np.float32)))
+                                                                  self.foot_positions_in_base_frame.flatten().astype(np.float32)))
         return obs
+
+    def normalize_obs(self):
+        # TODO
+        pass
 
     # TODO implement obs filtering.
     def filter(self):

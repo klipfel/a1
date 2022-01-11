@@ -35,7 +35,7 @@ def main():
     print("TEST: Keeps current configuration for 1 sec.")
     for _ in tqdm(range(100)):
         cf.obs_parser.observe_record()
-        # cf.obs_parser.print_obs()
+        cf.obs_parser.print_obs()
         cf.robot.Step(current_motor_angle, robot_config.MotorControlMode.POSITION)
         time.sleep(0.01)
 
