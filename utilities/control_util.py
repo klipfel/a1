@@ -1,4 +1,5 @@
 import numpy as np
+import copy
 from absl import logging
 import os
 import inspect
@@ -100,10 +101,12 @@ class ControlFramework:
             p.setAdditionalSearchPath(pybullet_data.getDataPath())
             p.loadURDF("plane.urdf")
             robot = a1.A1(pybullet_client=p, action_repeat=1)
-            robot.motor_kps = np.array([KPA,KP,KP] * 4)
-            robot.motor_kds = np.array([KDA,KD,KD] * 4)
-            print("Robot Kps: ", robot.motor_kps)
-            print("Robot Kds: ", robot.motor_kds)
+            motor_kps = np.array([KPA,KP,KP] * 4)
+            motor_kds = np.array([KDA,KD,KD] * 4)
+            robot.SetMotorGains(motor_kps, motor_kds)
+            gains = robot.GetMotorGains()
+            print("Robot Kps:", gains[0])
+            print("Robot Kds:", gains[1])
             p.configureDebugVisualizer(p.COV_ENABLE_RENDERING,1)
         else:
             logging.error("ERROR: unsupported mode. Either sim or hdw.")
@@ -114,6 +117,7 @@ class ControlFramework:
         self.is_sim_env = is_sim_env
         self.is_sim_gui = is_sim_gui
         self.is_hdw = is_hdw
+        self.obs_parser = ObservationParser(self.robot)
 
     def process_single_joint_target(self):
         """Process the single joint target specification."""
@@ -125,3 +129,91 @@ class ControlFramework:
             sjt = np.array(self.args.sjt*4)
         print("Single joint target set to: ", sjt)
         return sjt
+
+    def observe(self):
+        """Returns the agent observations."""
+        pass
+
+
+class ActionParser:
+
+    def __init__(self, robot):
+        pass
+
+
+class ObservationParser:
+
+    def __init__(self, robot):
+        self.robot = robot
+        self.current_obs = None
+        self.past_obs = None
+        # Buffers.
+        self.motor_angles_buffer = None
+        self.motor_angle_rates_buffer = None
+        self.rp_buffer = None
+        self.foot_positions_in_base_frame_buffer = None
+        self.measurements_std_dict = {}
+
+    def observe(self):
+        self.motor_angles = self.robot.GetMotorAngles()  # in [-\pi;+\pi]
+        self.motor_angle_rates = self.robot.GetMotorVelocities()
+        self.rpy = self.robot.GetBaseRollPitchYaw()
+        self.foot_positions_in_base_frame = self.robot.GetFootPositionsInBaseFrame()
+        # Prepares measurements for the policy.
+        if self.current_obs is not None:
+            tmp = copy.deepcopy(self.current_obs)
+        else:
+            tmp = None
+        self.current_obs = np.concatenate((self.motor_angles,
+                                          self.motor_angle_rates,
+                                          self.rpy[:2],
+                                          self.foot_positions_in_base_frame),
+                                          axis=None)
+        # float32 for pytorch.
+        self.current_obs = np.array([list(self.current_obs)], dtype=np.float32)
+        # Put observations array in one row for policy.
+        np.reshape(self.current_obs, (1, -1))
+        if self.past_obs is None:  # first time reading obs.
+            self.past_obs = np.zeros(self.current_obs.shape)
+        else:
+            self.past_obs = tmp
+        self.obs = np.hstack((self.current_obs, self.past_obs))
+        return self.obs
+
+    def observe_record(self):
+        obs = self.observe()
+        # Buffer.
+        if self.motor_angles_buffer is None:
+            self.motor_angles_buffer = self.motor_angles.astype(np.float32)
+            self.motor_angle_rates_buffer = self.motor_angle_rates.astype(np.float32)
+            self.rp_buffer = self.rpy[:2].astype(np.float32)
+            self.foot_positions_in_base_frame_buffer = self.foot_positions_in_base_frame.flatten().astype(np.float32)
+        else:  # adds in buffer.
+            self.motor_angles_buffer = np.vstack((self.motor_angles_buffer,
+                                                       self.motor_angles.astype(np.float32)))
+            self.motor_angle_rates_buffer = np.vstack((self.motor_angle_rates_buffer,
+                                                            self.motor_angle_rates.astype(np.float32)))
+            self.rp_buffer = np.vstack((self.rp_buffer,
+                                             self.rpy[:2].astype(np.float32)))
+            self.foot_positions_in_base_frame_buffer = np.vstack((self.foot_positions_in_base_frame_buffer,
+                                                                       self.foot_positions_in_base_frame.flatten().astype(np.float32)))
+        return obs
+
+    def print_obs(self):
+        print("Motor angles: {}".format(self.motor_angles))
+        print("Motor angle rates: {}".format(self.motor_angle_rates))
+        print("RPY: {}".format(self.rpy))
+        print("Relative foot positions: {}".format(self.foot_positions_in_base_frame))
+        print("Policy obs: {}".format(self.obs))
+
+    def get_obs_std(self):
+        # Computes the std for the different measurement buffer.
+        self.measurements_std_dict["Motor-Angles"] = self.motor_angles_buffer.std(axis=0)
+        self.measurements_std_dict["Motor-Angle-Rates"] = self.motor_angle_rates_buffer.std(axis=0)
+        self.measurements_std_dict["RP"] = self.rp_buffer.std(axis=0)
+        self.measurements_std_dict["Foot-Position"] = self.foot_positions_in_base_frame_buffer.std(axis=0)
+
+    def print_obs_std(self):
+        print(self.measurements_std_dict)
+
+
