@@ -11,6 +11,10 @@ import pybullet  # pytype:disable=import-error
 import pybullet_data
 from pybullet_utils import bullet_client
 
+from utilities.config import Config
+
+import torch
+from torch.distributions import Normal
 
 def error(x, y):
     np.linalg.norm(np.array(x-y))
@@ -25,7 +29,6 @@ class ControlFramework:
         parser.add_argument("-r", "--rack", help='rack boolean. If true the robot is considered to be on a rack. For now only in simulation', type=bool, default=True)
         parser.add_argument("-t", "--test_type", help='Type of the test: static.', type=str, default="static")
         parser.add_argument("-m", "--mode", help='sim or hdw', type=str, default="sim")
-        # TODO why do the gains not have any effect in simulation?
         parser.add_argument("--kp", help='Proportional for thigh and calf.', type=float, default=40.0)
         parser.add_argument("--kpa", help='Proportional for hip.', type=float, default=40.0)
         parser.add_argument("--kd", help='Derivative for thigh and calf.', type=float, default=0.5)
@@ -34,6 +37,7 @@ class ControlFramework:
         parser.add_argument("--nsteps", help="Total control steps to reach joint position.", type=int, default=300)
         parser.add_argument("--sp", help="Smoothing percentage.", type=float, default=2/3)
         parser.add_argument("--sjt", nargs="+", help="Single joint target specification for one leg.", type=float, default=None)
+        parser.add_argument("-w", "--weight", help="pre-trained weight path", type=str, default=Config.WEIGHT_PATH)
         args = parser.parse_args()
         logging.info("WARNING: this code executes low-level controller on the robot.")
         logging.info("Make sure the robot is hang on rack before proceeding.")
@@ -48,6 +52,8 @@ class ControlFramework:
         KD = args.kd
         KPA = args.kpa
         KDA = args.kda
+        # Policy setup.
+        self.policy = Policy(args)
         # Creates a simulation using a gym environment.
         if is_sim_env:
             from motion_imitation.robots import a1
@@ -135,6 +141,43 @@ class ControlFramework:
         pass
 
 
+class Policy:
+
+    def __init__(self, args, stochastic_test=False):
+        self.stochastic_test = stochastic_test
+        self.weight_path = args.weight
+        from policy import ppo_module  # net architectures.
+        # Inference done on the CPU.
+        # TODO compare with GPU? in time
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print("\nTorch device: ", self.device)
+        # calculate i/o dimensions of the policy net.
+        self.ob_dim = Config.INPUT_DIMS
+        self.act_dim = Config.OUTPUT_DIMS
+        # Load policy net.
+        self.loaded_graph = ppo_module.HafnerActorModelStd(self.ob_dim, self.act_dim)
+        self.loaded_graph.load_state_dict(torch.load(self.weight_path, map_location=self.device)["actor_architecture_state_dict"])
+        # Actions
+        self.action_ll = None
+        self.action_np = None
+
+    def inference(self, obs):
+        action_ll = self.loaded_graph.forward(torch.from_numpy(obs).cpu())
+        mean = action_ll[:, self.act_dim:]
+        std = action_ll[:, :self.act_dim]
+        if self.stochastic_test:
+            distribution = Normal(mean, std)
+            stochastic_actions = distribution.sample()
+            action_np = stochastic_actions.cpu().detach().numpy()
+        else:
+            action_ll = mean
+            action_np = action_ll.cpu().detach().numpy()
+        self.action_ll = action_ll
+        self.action_np = action_np
+        return action_np
+
+
 class ActionParser:
 
     def __init__(self, robot):
@@ -202,6 +245,10 @@ class ObservationParser:
             self.foot_positions_in_base_frame_buffer = np.vstack((self.foot_positions_in_base_frame_buffer,
                                                                        self.foot_positions_in_base_frame.flatten().astype(np.float32)))
         return obs
+
+    # TODO implement obs filtering.
+    def filter(self):
+        pass
 
     def print_obs(self):
         print("Motor angles: {}".format(self.motor_angles))
