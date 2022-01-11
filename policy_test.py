@@ -34,13 +34,15 @@ def main():
     # Static control to the same joint position the robot has. This is a test.
     print("TEST: Keeps current configuration for 1 sec.")
     for _ in tqdm(range(100)):
-        cf.obs_parser.observe_record()
-        cf.obs_parser.print_obs()
+        obs = cf.obs_parser.observe()
+        # cf.obs_parser.print_obs()
+        action = cf.policy.inference(obs)
+        print(action)
         cf.robot.Step(current_motor_angle, robot_config.MotorControlMode.POSITION)
         time.sleep(0.01)
 
-    cf.obs_parser.get_obs_std()
-    cf.obs_parser.print_obs_std()
+    # cf.obs_parser.get_obs_std()
+    # cf.obs_parser.print_obs_std()
 
     # print("Control starts...")
     # alpha = 0.2

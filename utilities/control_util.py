@@ -164,8 +164,8 @@ class Policy:
 
     def inference(self, obs):
         action_ll = self.loaded_graph.forward(torch.from_numpy(obs).cpu())
-        mean = action_ll[:, self.act_dim:]
-        std = action_ll[:, :self.act_dim]
+        mean = action_ll[:, self.act_dim//2:]
+        std = action_ll[:, :self.act_dim//2]
         if self.stochastic_test:
             distribution = Normal(mean, std)
             stochastic_actions = distribution.sample()
@@ -240,10 +240,10 @@ class ObservationParser:
             self.past_obs = tmp[:, 24:]  # removes the joint information only.
         self.obs = np.hstack((self.current_obs, self.past_obs))
         self.obs_shape = self.obs.shape
-        print(self.obs_shape)
         return self.obs
 
     def observe_record(self):
+        # TODO add the buffer for the body angular vel.
         obs = self.observe()
         # Buffer.
         if self.motor_angles_buffer is None:
@@ -279,10 +279,11 @@ class ObservationParser:
 
     def get_obs_std(self):
         # Computes the std for the different measurement buffer.
-        self.measurements_std_dict["Motor-Angles"] = self.motor_angles_buffer.std(axis=0)
-        self.measurements_std_dict["Motor-Angle-Rates"] = self.motor_angle_rates_buffer.std(axis=0)
-        self.measurements_std_dict["RP"] = self.rp_buffer.std(axis=0)
-        self.measurements_std_dict["Foot-Position"] = self.foot_positions_in_base_frame_buffer.std(axis=0)
+        if self.motor_angles_buffer is not None:
+            self.measurements_std_dict["Motor-Angles"] = self.motor_angles_buffer.std(axis=0)
+            self.measurements_std_dict["Motor-Angle-Rates"] = self.motor_angle_rates_buffer.std(axis=0)
+            self.measurements_std_dict["RP"] = self.rp_buffer.std(axis=0)
+            self.measurements_std_dict["Foot-Position"] = self.foot_positions_in_base_frame_buffer.std(axis=0)
 
     def print_obs_std(self):
         print(self.measurements_std_dict)
