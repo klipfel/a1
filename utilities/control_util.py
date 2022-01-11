@@ -117,7 +117,7 @@ class ControlFramework:
         self.is_sim_env = is_sim_env
         self.is_sim_gui = is_sim_gui
         self.is_hdw = is_hdw
-        self.obs_parser = ObservationParser(self.robot)
+        self.obs_parser = ObservationParser(self.robot, self.args)
 
     def process_single_joint_target(self):
         """Process the single joint target specification."""
@@ -143,7 +143,8 @@ class ActionParser:
 
 class ObservationParser:
 
-    def __init__(self, robot):
+    def __init__(self, robot, args):
+        self.args = args
         self.robot = robot
         self.current_obs = None
         self.past_obs = None
@@ -157,7 +158,10 @@ class ObservationParser:
     def observe(self):
         self.motor_angles = self.robot.GetMotorAngles()  # in [-\pi;+\pi]
         self.motor_angle_rates = self.robot.GetMotorVelocities()
-        self.rpy = self.robot.GetBaseRollPitchYaw()
+        if self.args.mode == "hdw":
+            self.rpy = np.array(self.robot.GetBaseRollPitchYaw())
+        else:
+            self.rpy = self.robot.GetBaseRollPitchYaw()
         self.foot_positions_in_base_frame = self.robot.GetFootPositionsInBaseFrame()
         # Prepares measurements for the policy.
         if self.current_obs is not None:
