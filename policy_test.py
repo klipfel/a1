@@ -37,7 +37,7 @@ def main():
         obs = cf.obs_parser.observe()
         # cf.obs_parser.print_obs()
         action = cf.policy.inference(obs)
-        print(action)
+        # print(action)
         cf.robot.Step(current_motor_angle, robot_config.MotorControlMode.POSITION)
         time.sleep(0.01)
 
@@ -59,6 +59,8 @@ def main():
 
     print("Final joint positions:", np.array(cf.robot.GetMotorAngles()))
     print("Final joint positions error:", np.linalg.norm(np.array(cf.robot.GetMotorAngles())-desired_motor_angle))
+
+    cf.logger.log()
 
     if cf.is_hdw:
         cf.robot.Terminate()

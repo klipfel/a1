@@ -12,9 +12,11 @@ import pybullet_data
 from pybullet_utils import bullet_client
 
 from utilities.config import Config
+from utilities.logging import Logger
 
 import torch
 from torch.distributions import Normal
+
 
 def error(x, y):
     np.linalg.norm(np.array(x-y))
@@ -38,6 +40,7 @@ class ControlFramework:
         parser.add_argument("--sp", help="Smoothing percentage.", type=float, default=2/3)
         parser.add_argument("--sjt", nargs="+", help="Single joint target specification for one leg.", type=float, default=None)
         parser.add_argument("-w", "--weight", help="pre-trained weight path", type=str, default=Config.WEIGHT_PATH)
+        parser.add_argument("-obsn", "--obs_normalization", help="Normalize or not observations based on the data accumulated in Raisim.", type=bool, default=Config.OBS_NORMALIZATION)
         args = parser.parse_args()
         logging.info("WARNING: this code executes low-level controller on the robot.")
         logging.info("Make sure the robot is hang on rack before proceeding.")
@@ -124,6 +127,12 @@ class ControlFramework:
         self.is_sim_gui = is_sim_gui
         self.is_hdw = is_hdw
         self.obs_parser = ObservationParser(self.robot, self.args)
+        # Logger.
+        if args.obs_normalization:
+            self.logger = Logger(obs_ref=self.obs_parser.obs_buffer,
+                                 obsn_ref=self.obs_parser.obsn_buffer)
+        else:
+            self.logger = Logger(obs_ref=self.obs_parser.obs_buffer)
 
     def process_single_joint_target(self):
         """Process the single joint target specification."""
@@ -184,9 +193,46 @@ class ActionParser:
         pass
 
 
+class RunningMeanStd(object):
+    def __init__(self, epsilon=1e-4, shape=()):
+        """
+        Source: Raisim software in RaisimGymEnv.
+        calulates the running mean and std of a data stream
+        https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Parallel_algorithm
+
+        :param epsilon: (float) helps with arithmetic issues
+        :param shape: (tuple) the shape of the data stream's output
+        """
+        self.mean = np.zeros(shape, 'float32')
+        self.var = np.ones(shape, 'float32')
+        self.count = epsilon
+
+    def update(self, arr):
+        batch_mean = np.mean(arr, axis=0)
+        batch_var = np.var(arr, axis=0)
+        batch_count = arr.shape[0]
+        self.update_from_moments(batch_mean, batch_var, batch_count)
+
+    def update_from_moments(self, batch_mean, batch_var, batch_count):
+        delta = batch_mean - self.mean
+        tot_count = self.count + batch_count
+
+        new_mean = self.mean + delta * batch_count / tot_count
+        m_a = self.var * self.count
+        m_b = batch_var * batch_count
+        m_2 = m_a + m_b + np.square(delta) * (self.count * batch_count / (self.count + batch_count))
+        new_var = m_2 / (self.count + batch_count)
+
+        new_count = batch_count + self.count
+
+        self.mean = new_mean
+        self.var = new_var
+        self.count = new_count
+
+
 class ObservationParser:
 
-    def __init__(self, robot, args):
+    def __init__(self, robot, args, clip_obs=10.):
         self.args = args
         self.robot = robot
         self.current_obs = None
@@ -195,6 +241,11 @@ class ObservationParser:
         self.motor_angles_buffer = None
         self.motor_angle_rates_buffer = None
         self.rp_buffer = None
+        self.obs_buffer = []
+        self.obsn_buffer = []  # normalized obs if applicable.
+        # Path to dir where to store temporary data.
+        self.logdir = Config.LOGDIR
+        # Other va.
         self.foot_positions_in_base_frame_buffer = None
         self.measurements_std_dict = {}
         self.history_shape = None
@@ -205,6 +256,22 @@ class ObservationParser:
         self.rpy_rate = None
         self.foot_positions_in_base_frame = None
         self.obs = None
+        self.obsn = None
+        # Obs normalization data from policy.
+        self.obs_rms = RunningMeanStd(shape=[1, Config.INPUT_DIMS])
+        self.clip_obs = clip_obs
+        if self.args.obs_normalization:
+            self.load_scaling(Config.POLICY_DIR, Config.POLICY_ITERATION)
+
+    def load_scaling(self, dir_name, iteration, count=1e5):
+        mean_file_name = dir_name + "/mean" + str(iteration) + ".csv"
+        var_file_name = dir_name + "/var" + str(iteration) + ".csv"
+        self.obs_rms.count = count
+        # TODO choose from another normalization data. The csv file contains normalization data for all environment.
+        # TODO check if the normalization data for other env are the same. I chose the first env for now.
+        # TODO these data should be the same after enough training. Is there a way to merge them?
+        self.obs_rms.mean = np.loadtxt(mean_file_name, dtype=np.float32, max_rows=1)
+        self.obs_rms.var = np.loadtxt(var_file_name, dtype=np.float32, max_rows=1)
 
     def observe(self):
         self.motor_angles = self.robot.GetMotorAngles()  # in [-\pi;+\pi]
@@ -212,6 +279,7 @@ class ObservationParser:
         # TODO is the angular vel here the same as the one given in Raisim, they might be using quaternions ....
         # TODO but it has 3 coordinates so I guess it is the true angular vel. Difference between ang vel returned by simulation
         # TODO and the one computed.
+        # TODO is the leg order the same?
         if self.args.mode == "hdw":
             self.rpy = np.array(self.robot.GetBaseRollPitchYaw())
         else:
@@ -224,10 +292,10 @@ class ObservationParser:
         else:
             tmp = None
         self.current_obs = np.concatenate((self.motor_angles,
-                                          self.motor_angle_rates,
-                                          self.rpy[:2],
-                                          self.rpy_rate,
-                                          self.foot_positions_in_base_frame),
+                                           self.motor_angle_rates,
+                                           self.rpy[:2],
+                                           self.rpy_rate,
+                                           self.foot_positions_in_base_frame),
                                           axis=None)
         # float32 for pytorch.
         self.current_obs = np.array([list(self.current_obs)], dtype=np.float32)
@@ -240,9 +308,19 @@ class ObservationParser:
             self.past_obs = tmp[:, 24:]  # removes the joint information only.
         self.obs = np.hstack((self.current_obs, self.past_obs))
         self.obs_shape = self.obs.shape
+        # Store obs.
+        self.obs_buffer.append(self.obs.flatten())  # flatten for logging.
+        # Obs normalization.
+        if self.args.obs_normalization:
+            self.obsn = self.normalize(copy.deepcopy(self.obs))
+            self.obsn_buffer.append(self.obsn.flatten())  # flatten for logging.
+            return self.obsn
         return self.obs
 
     def observe_record(self):
+        """"
+        Records the sensor outputs, and returns obs.
+        """
         # TODO add the buffer for the body angular vel.
         obs = self.observe()
         # Buffer.
@@ -262,9 +340,13 @@ class ObservationParser:
                                                                   self.foot_positions_in_base_frame.flatten().astype(np.float32)))
         return obs
 
-    def normalize_obs(self):
-        # TODO
-        pass
+    def normalize(self, obs):
+        """
+        TODO in the tester in Raisim they use the mean and var data from the training, but what do I with the robot?
+        TODO the mean and var data are not accurate for the hdw.
+        :return:
+        """
+        return np.clip((obs - self.obs_rms.mean) / np.sqrt(self.obs_rms.var + 1e-8), -self.clip_obs, self.clip_obs)
 
     # TODO implement obs filtering.
     def filter(self):
