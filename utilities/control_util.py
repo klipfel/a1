@@ -46,6 +46,7 @@ class ControlFramework:
         parser.add_argument("--sjt", nargs="+", help="Single joint target specification for one leg.", type=float, default=None)
         parser.add_argument("-w", "--weight", help="pre-trained weight path", type=str, default=Config.WEIGHT_PATH)
         parser.add_argument("-obsn", "--obs_normalization", help="Normalize or not observations based on the data accumulated in Raisim.", type=bool, default=Config.OBS_NORMALIZATION)
+        parser.add_argument("--run_hdw", help="Apply actions on hardware.", type=bool, default=False)
         args = parser.parse_args()
         logging.info("WARNING: this code executes low-level controller on the robot.")
         logging.info("Make sure the robot is hang on rack before proceeding.")
