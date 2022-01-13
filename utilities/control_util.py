@@ -11,10 +11,10 @@ import pybullet  # pytype:disable=import-error
 import pybullet_data
 from pybullet_utils import bullet_client
 
-USER = os.system("echo $USER")
+HOME = os.system("echo $HOME")
 
 # Motion imitation wrapper
-if USER == "unitree":  # adds the path to the local motion_imitation wrapper installation.
+if HOME == "/home/unitree":  # adds the path to the local motion_imitation wrapper installation.
     os.sys.path.append("/home/unitree/arnaud/motion_imitation")
 from motion_imitation.robots import robot_config
 
