@@ -138,7 +138,10 @@ class ControlFramework:
         self.is_sim_env = is_sim_env
         self.is_sim_gui = is_sim_gui
         self.is_hdw = is_hdw
-        self.obs_parser = ObservationParser(self.robot, self.args)
+        self.policy_dir, self.policy_it = self.policy_info_from_dir_path()
+        self.obs_parser = ObservationParser(self.robot, self.args,
+                                            policy_dir=self.policy_dir,
+                                            policy_iteration=self.policy_it)
         self.action_bridge = ActionBridge(self.robot)
         self.ini_conf = Config.INI_JOINT_CONFIG
         # Logger.
@@ -153,6 +156,16 @@ class ControlFramework:
                                  action_policy_ref=self.action_bridge.action_policy_buffer,
                                  action_ref=self.action_bridge.action_buffer
                                  )
+
+    def policy_info_from_dir_path(self):
+        components = self.args.weight.split('/')
+        policy_dir = self.args.weight[:-len(components[-1])]
+        policy_it = ''
+        for e in components[-1]:
+            if e.isdigit():
+                policy_it += e
+        policy_it = int(policy_it)
+        return policy_dir, policy_it
 
     def process_single_joint_target(self):
         """Process the single joint target specification."""
@@ -341,7 +354,8 @@ class RunningMeanStd(object):
 
 class ObservationParser:
 
-    def __init__(self, robot, args, clip_obs=10.):
+    def __init__(self, robot, args, clip_obs=10., policy_dir=Config.POLICY_DIR,
+                 policy_iteration=Config.POLICY_ITERATION):
         self.args = args
         self.robot = robot
         self.current_obs = None
@@ -370,7 +384,7 @@ class ObservationParser:
         self.obs_rms = RunningMeanStd(shape=[1, Config.INPUT_DIMS])
         self.clip_obs = clip_obs
         if self.args.obs_normalization:
-            self.load_scaling(Config.POLICY_DIR, Config.POLICY_ITERATION)
+            self.load_scaling(policy_dir, policy_iteration)
 
     def load_scaling(self, dir_name, iteration, count=1e5):
         mean_file_name = dir_name + "/mean" + str(iteration) + ".csv"
