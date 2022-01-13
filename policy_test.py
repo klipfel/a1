@@ -27,19 +27,18 @@ from motion_imitation.robots import robot_config
 
 
 def main():
-    current_motor_angle = np.array(cf.robot.GetMotorAngles())
-    print("Current joint positions:", current_motor_angle)
-    desired_motor_angle = cf.process_single_joint_target()
-
+    # Initial setup, prepares the robot for policy.
+    cf.go_to_initial_configuration()
     # Static control to the same joint position the robot has. This is a test.
-    print("TEST: Keeps current configuration for 1 sec.")
-    for _ in tqdm(range(100)):
-        obs = cf.obs_parser.observe()
-        # cf.obs_parser.print_obs()
-        action = cf.policy.inference(obs)
-        # print(action)
-        cf.robot.Step(current_motor_angle, robot_config.MotorControlMode.POSITION)
-        time.sleep(0.01)
+    # print("TEST: Keeps current configuration for 1 sec.")
+    # current_motor_angle = np.array(cf.robot.GetMotorAngles())
+    # for _ in tqdm(range(100)):
+    #     obs = cf.obs_parser.observe()
+    #     # cf.obs_parser.print_obs()
+    #     action = cf.policy.inference(obs)
+    #     # print(action)
+    #     cf.robot.Step(current_motor_angle, robot_config.MotorControlMode.POSITION)
+    #     time.sleep(0.01)
 
     # cf.obs_parser.get_obs_std()
     # cf.obs_parser.print_obs_std()
@@ -58,7 +57,7 @@ def main():
     #     time.sleep(cf.args.dt)  # the example used 0.005.
 
     print("Final joint positions:", np.array(cf.robot.GetMotorAngles()))
-    print("Final joint positions error:", np.linalg.norm(np.array(cf.robot.GetMotorAngles())-desired_motor_angle))
+    # print("Final joint positions error:", np.linalg.norm(np.array(cf.robot.GetMotorAngles())-desired_motor_angle))
 
     cf.logger.log()
 

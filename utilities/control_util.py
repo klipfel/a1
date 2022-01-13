@@ -11,6 +11,9 @@ import pybullet  # pytype:disable=import-error
 import pybullet_data
 from pybullet_utils import bullet_client
 
+# Motion imitation wrapper
+from motion_imitation.robots import robot_config
+
 from utilities.config import Config
 from utilities.logging import Logger
 
@@ -62,7 +65,6 @@ class ControlFramework:
             from motion_imitation.robots import a1
             from motion_imitation.envs import env_builder # moved it here since it also imports tensforflow. Don't need this on
             # Motion imitation wrapper.
-            from motion_imitation.robots import robot_config
             # the hardware.
             # Create an environment for simulation.
             # TODO why is the environment like if the robot was always on a rack? I used another approach in sim2. It does
@@ -127,6 +129,7 @@ class ControlFramework:
         self.is_sim_gui = is_sim_gui
         self.is_hdw = is_hdw
         self.obs_parser = ObservationParser(self.robot, self.args)
+        self.ini_conf = np.array(Config.INI_JOINT_CONFIG)
         # Logger.
         if args.obs_normalization:
             self.logger = Logger(obs_ref=self.obs_parser.obs_buffer,
@@ -144,6 +147,38 @@ class ControlFramework:
             sjt = np.array(self.args.sjt*4)
         print("Single joint target set to: ", sjt)
         return sjt
+
+    def set_pd_gains(self, motor_kps=np.array([100.0] * 12), motor_kds=np.array([0.2] * 12)):
+        # TODO check if it work on hdw.
+        self.robot.SetMotorGains(motor_kps, motor_kds)
+        gains = self.robot.GetMotorGains()
+        print("Setting motor gains....")
+        print("Robot Kps:", gains[0])
+        print("Robot Kds:", gains[1])
+
+
+    def go_to_initial_configuration(self, alpha=0.8, nsteps=5000, dt=0.005):
+        """
+        Sets the robot in an initial configuration. Preferably close to the ones the robot was trained on at the start
+        of the training episodes. Prepares the robot for policy.
+        :param alpha: during 0.8*steps the robot will gradually be guided to the desired_motor_angle, and during 0.2*n_steps
+        it will be asked to go there directly. First step: transition and then once the joint configuration is not too
+        far the robot is controlled to it.
+        """
+        print("PREPARES ROBOT FOR POLICY...")
+        print(f"Setting joint positions to: {self.ini_conf}")
+        current_motor_angle = np.array(self.robot.GetMotorAngles())
+        print("Current joint positions:", current_motor_angle)
+        for t in tqdm(range(nsteps)):
+            blend_ratio = np.minimum(t / (nsteps*alpha), 1)
+            action = (1 - blend_ratio) * current_motor_angle + blend_ratio * self.ini_conf
+            if self.is_sim_env:
+                self.env.step(action)
+            elif self.is_hdw or self.is_sim_gui:
+                self.robot.Step(action, robot_config.MotorControlMode.POSITION)
+            else:
+                logging.error("ERROR: unsupported mode. Either sim or hdw.")
+            time.sleep(dt)  # the example used 0.005.
 
     def observe(self):
         """Returns the agent observations."""
