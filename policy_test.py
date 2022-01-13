@@ -17,6 +17,7 @@ from absl import logging
 import numpy as np
 
 from utilities.control_util import ControlFramework
+from utilities.config import Config
 
 cf = ControlFramework()
 
@@ -30,15 +31,17 @@ def main():
     # Initial setup, prepares the robot for policy.
     cf.go_to_initial_configuration()
     # Static control to the same joint position the robot has. This is a test.
-    # print("TEST: Keeps current configuration for 1 sec.")
+    print("TEST: Keeps current configuration for 1 sec.")
     # current_motor_angle = np.array(cf.robot.GetMotorAngles())
-    # for _ in tqdm(range(100)):
-    #     obs = cf.obs_parser.observe()
-    #     # cf.obs_parser.print_obs()
-    #     action = cf.policy.inference(obs)
-    #     # print(action)
-    #     cf.robot.Step(current_motor_angle, robot_config.MotorControlMode.POSITION)
-    #     time.sleep(0.01)
+    for _ in tqdm(range(1000)):
+        obs = cf.obs_parser.observe()
+        # cf.obs_parser.print_obs()
+        # action = cf.policy.inference(obs)
+        # print(action)
+        cf.robot.Step(Config.INI_JOINT_CONFIG, robot_config.MotorControlMode.POSITION)
+        time.sleep(0.01)
+
+    cf.run()
 
     # cf.obs_parser.get_obs_std()
     # cf.obs_parser.print_obs_std()

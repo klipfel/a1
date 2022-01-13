@@ -20,6 +20,8 @@ from utilities.logging import Logger
 import torch
 from torch.distributions import Normal
 
+LINE = "-"*100
+
 
 def error(x, y):
     np.linalg.norm(np.array(x-y))
@@ -129,13 +131,20 @@ class ControlFramework:
         self.is_sim_gui = is_sim_gui
         self.is_hdw = is_hdw
         self.obs_parser = ObservationParser(self.robot, self.args)
-        self.ini_conf = np.array(Config.INI_JOINT_CONFIG)
+        self.action_bridge = ActionBridge(self.robot)
+        self.ini_conf = Config.INI_JOINT_CONFIG
         # Logger.
         if args.obs_normalization:
             self.logger = Logger(obs_ref=self.obs_parser.obs_buffer,
-                                 obsn_ref=self.obs_parser.obsn_buffer)
+                                 obsn_ref=self.obs_parser.obsn_buffer,
+                                 action_policy_ref=self.action_bridge.action_policy_buffer,
+                                 action_ref=self.action_bridge.action_buffer
+                                 )
         else:
-            self.logger = Logger(obs_ref=self.obs_parser.obs_buffer)
+            self.logger = Logger(obs_ref=self.obs_parser.obs_buffer,
+                                 action_policy_ref=self.action_bridge.action_policy_buffer,
+                                 action_ref=self.action_bridge.action_buffer
+                                 )
 
     def process_single_joint_target(self):
         """Process the single joint target specification."""
@@ -148,7 +157,7 @@ class ControlFramework:
         print("Single joint target set to: ", sjt)
         return sjt
 
-    def set_pd_gains(self, motor_kps=np.array([100.0] * 12), motor_kds=np.array([0.2] * 12)):
+    def set_pd_gains(self, motor_kps=np.array([100.0] * 12), motor_kds=np.array([2.0] * 12)):
         # TODO check if it work on hdw.
         self.robot.SetMotorGains(motor_kps, motor_kds)
         gains = self.robot.GetMotorGains()
@@ -157,7 +166,7 @@ class ControlFramework:
         print("Robot Kds:", gains[1])
 
 
-    def go_to_initial_configuration(self, alpha=0.8, nsteps=5000, dt=0.005):
+    def go_to_initial_configuration(self, alpha=0.8, nsteps=2000, dt=0.005):
         """
         Sets the robot in an initial configuration. Preferably close to the ones the robot was trained on at the start
         of the training episodes. Prepares the robot for policy.
@@ -165,6 +174,7 @@ class ControlFramework:
         it will be asked to go there directly. First step: transition and then once the joint configuration is not too
         far the robot is controlled to it.
         """
+        print(LINE)
         print("PREPARES ROBOT FOR POLICY...")
         print(f"Setting joint positions to: {self.ini_conf}")
         current_motor_angle = np.array(self.robot.GetMotorAngles())
@@ -179,10 +189,35 @@ class ControlFramework:
             else:
                 logging.error("ERROR: unsupported mode. Either sim or hdw.")
             time.sleep(dt)  # the example used 0.005.
+        print(LINE)
+
+    def run(self, nsteps=5000, dt=0.005, repeat_nsteps=5):
+        print(LINE)
+        print("Running the policy....")
+        self.set_pd_gains(motor_kps=np.array([100.0] * 12), motor_kds=np.array([2.0] * 12))
+        for _ in tqdm(range(nsteps)):
+            obs = self.observe()
+            action_np = self.policy.inference(obs)
+            action_robot = self.action_bridge.adapt(action_np)
+            # Adds residual to nomimal configuration.
+            joint_target = action_robot.flatten() + self.ini_conf
+            current_motor_angle = np.array(self.robot.GetMotorAngles())
+            for k in range(repeat_nsteps):
+                blend_ratio = np.minimum(k / (repeat_nsteps-1), 1)
+                intermediary_joint_target = (1 - blend_ratio) * current_motor_angle + blend_ratio * joint_target
+                if self.is_sim_env:
+                    self.env.step(intermediary_joint_target)
+                elif self.is_hdw or self.is_sim_gui:
+                    self.robot.Step(intermediary_joint_target, robot_config.MotorControlMode.POSITION)
+                else:
+                    logging.error("ERROR: unsupported mode. Either sim or hdw.")
+                time.sleep(dt)
+        print(LINE)
 
     def observe(self):
         """Returns the agent observations."""
-        pass
+        return self.obs_parser.observe()
+
 
 
 class Policy:
@@ -222,10 +257,41 @@ class Policy:
         return action_np
 
 
-class ActionParser:
+class ActionBridge:
 
-    def __init__(self, robot):
-        pass
+    # TODO scaling
+    # TODO Filtering
+    # TODO check leg order
+
+    def __init__(self, robot, leg_bounds=Config.LEG_JOINT_BOUND):
+        self.action_policy = None
+        self.action = None
+        self.action_policy_buffer = []
+        self.action_buffer = []
+        self.leg_bounds = leg_bounds
+
+    def adapt(self, action_policy):
+        self.action_policy_buffer.append(copy.deepcopy(action_policy).flatten())
+        action = copy.deepcopy(action_policy)
+        self.clip(action)
+        self.filter(action)
+        self.action_buffer.append(copy.deepcopy(action).flatten())
+        return action
+
+    def clip(self, action):
+        # for j, aj in enumerate(list(action.flatten())):
+        action[:, Config.HIP_INDEX] = np.array([np.clip(action[:, Config.HIP_INDEX].flatten(),
+                                                        -self.leg_bounds[0], self.leg_bounds[0])])
+        action[:, Config.THIGH_INDEX] = np.array([np.clip(action[:, Config.THIGH_INDEX].flatten(),
+                                                        -self.leg_bounds[1], self.leg_bounds[1])])
+        action[:, Config.CALF_INDEX] = np.array([np.clip(action[:, Config.CALF_INDEX].flatten(),
+                                                        -self.leg_bounds[2], self.leg_bounds[2])])
+
+    def filter(self, action):
+        # TODO do an average filtering as soon as there are more than 2 action and then use a window of 5.
+        if len(self.action_buffer) >= Config.FILTER_WINDOW_LENGTH:
+            action += sum(self.action_buffer[-Config.FILTER_WINDOW_LENGTH+1:])
+            action /= Config.FILTER_WINDOW_LENGTH
 
 
 class RunningMeanStd(object):
