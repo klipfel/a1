@@ -229,7 +229,7 @@ class ControlFramework:
             joint_target = action_robot.flatten() + self.ini_conf
             current_motor_angle = np.array(self.robot.GetMotorAngles())
             for k in range(self.args.nrepeat):
-                blend_ratio = np.minimum(k / (self.args.nrepeatF-1), 1)
+                blend_ratio = np.minimum(k / (self.args.nrepeat-1), 1)
                 intermediary_joint_target = (1 - blend_ratio) * current_motor_angle + blend_ratio * joint_target
                 if self.is_sim_env:
                     self.env.step(intermediary_joint_target)
