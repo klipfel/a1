@@ -41,7 +41,7 @@ class ControlFramework:
         parser.add_argument("--kd", help='Derivative for thigh and calf.', type=float, default=0.5)
         parser.add_argument("--kda", help='Derivative for hip.', type=float, default=0.5)
         parser.add_argument("--dt", help="Control time step.", type=float, default=0.01)
-        parser.add_argument("--nsteps", help="Total control steps to reach joint position.", type=int, default=300)
+        parser.add_argument("--nsteps", help="Total control steps to reach joint position.", type=int, default=200)
         parser.add_argument("--sp", help="Smoothing percentage.", type=float, default=2/3)
         parser.add_argument("--sjt", nargs="+", help="Single joint target specification for one leg.", type=float, default=None)
         parser.add_argument("-w", "--weight", help="pre-trained weight path", type=str, default=Config.WEIGHT_PATH)
@@ -191,11 +191,11 @@ class ControlFramework:
             time.sleep(dt)  # the example used 0.005.
         print(LINE)
 
-    def run(self, nsteps=5000, dt=0.005, repeat_nsteps=5):
+    def run(self, dt=0.005, repeat_nsteps=5):
         print(LINE)
         print("Running the policy....")
         self.set_pd_gains(motor_kps=np.array([100.0] * 12), motor_kds=np.array([2.0] * 12))
-        for _ in tqdm(range(nsteps)):
+        for _ in tqdm(range(self.args.nsteps)):
             obs = self.observe()
             action_np = self.policy.inference(obs)
             action_robot = self.action_bridge.adapt(action_np)
