@@ -12,7 +12,7 @@ import pybullet_data
 from pybullet_utils import bullet_client
 
 HOME = os.system("echo $HOME")
-
+print(f"-{HOME}-")
 # Motion imitation wrapper
 if HOME == "/home/unitree":  # adds the path to the local motion_imitation wrapper installation.
     os.sys.path.append("/home/unitree/arnaud/motion_imitation")
