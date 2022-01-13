@@ -2,6 +2,7 @@ import numpy as np
 import copy
 from absl import logging
 import os
+import subprocess
 import inspect
 import argparse
 from tqdm import tqdm
@@ -11,10 +12,11 @@ import pybullet  # pytype:disable=import-error
 import pybullet_data
 from pybullet_utils import bullet_client
 
-HOME = os.system("echo $HOME")
-print(f"-{HOME}-")
+subprocess = subprocess.Popen("echo $HOME", shell=True, stdout=subprocess.PIPE)
+HOME = subprocess.stdout.read()
+HOME = str(HOME)
 # Motion imitation wrapper
-if HOME == "/home/unitree":  # adds the path to the local motion_imitation wrapper installation.
+if HOME.find('unitree')!=-1:  # adds the path to the local motion_imitation wrapper installation.
     os.sys.path.append("/home/unitree/arnaud/motion_imitation")
 from motion_imitation.robots import robot_config
 
