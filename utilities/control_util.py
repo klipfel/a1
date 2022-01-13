@@ -44,11 +44,15 @@ class ControlFramework:
         parser.add_argument("-t", "--test_type", help='Type of the test: static.', type=str, default="static")
         parser.add_argument("-m", "--mode", help='sim or hdw', type=str, default="sim")
         parser.add_argument("--kp", help='Proportional for thigh and calf.', type=float, default=40.0)
+        parser.add_argument("--kp_policy", help='Proportional for thigh and calf.', type=float, default=40.0)
         parser.add_argument("--kpa", help='Proportional for hip.', type=float, default=40.0)
+        parser.add_argument("--kd_policy", help='Derivative for thigh and calf.', type=float, default=0.5)
         parser.add_argument("--kd", help='Derivative for thigh and calf.', type=float, default=0.5)
         parser.add_argument("--kda", help='Derivative for hip.', type=float, default=0.5)
         parser.add_argument("--dt", help="Control time step.", type=float, default=0.01)
+        parser.add_argument("--dt_policy", help="Control time step for the policy test.", type=float, default=0.005)
         parser.add_argument("--nsteps", help="Total control steps to reach joint position.", type=int, default=200)
+        parser.add_argument("--nrepeat", help="Number of steps to control to intermediary targets between policy commands.", type=int, default=5)
         parser.add_argument("--sp", help="Smoothing percentage.", type=float, default=2/3)
         parser.add_argument("--sjt", nargs="+", help="Single joint target specification for one leg.", type=float, default=None)
         parser.add_argument("-w", "--weight", help="pre-trained weight path", type=str, default=Config.WEIGHT_PATH)
@@ -212,10 +216,11 @@ class ControlFramework:
             time.sleep(dt)  # the example used 0.005.
         print(LINE)
 
-    def run(self, dt=0.005, repeat_nsteps=5):
+    def run(self):
         print(LINE)
         print("Running the policy....")
-        self.set_pd_gains(motor_kps=np.array([100.0] * 12), motor_kds=np.array([2.0] * 12))
+        self.set_pd_gains(motor_kps=np.array([self.args.kp_policy] * 12),
+                          motor_kds=np.array([self.args.kd_policy] * 12))
         for _ in tqdm(range(self.args.nsteps)):
             obs = self.observe()
             action_np = self.policy.inference(obs)
@@ -223,8 +228,8 @@ class ControlFramework:
             # Adds residual to nomimal configuration.
             joint_target = action_robot.flatten() + self.ini_conf
             current_motor_angle = np.array(self.robot.GetMotorAngles())
-            for k in range(repeat_nsteps):
-                blend_ratio = np.minimum(k / (repeat_nsteps-1), 1)
+            for k in range(self.args.nrepeat):
+                blend_ratio = np.minimum(k / (self.args.nrepeatF-1), 1)
                 intermediary_joint_target = (1 - blend_ratio) * current_motor_angle + blend_ratio * joint_target
                 if self.is_sim_env:
                     self.env.step(intermediary_joint_target)
@@ -232,7 +237,7 @@ class ControlFramework:
                     self.robot.Step(intermediary_joint_target, robot_config.MotorControlMode.POSITION)
                 else:
                     logging.error("ERROR: unsupported mode. Either sim or hdw.")
-                time.sleep(dt)
+                time.sleep(self.args.dt_policy)
         print(LINE)
 
     def observe(self):
