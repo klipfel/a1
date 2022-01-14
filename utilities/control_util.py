@@ -125,7 +125,10 @@ class ControlFramework:
             p.setPhysicsEngineParameter(enableConeFriction=0)
             p.setAdditionalSearchPath(pybullet_data.getDataPath())
             p.loadURDF("plane.urdf")
-            robot = a1.A1(pybullet_client=p, action_repeat=1)
+            robot = a1.A1(pybullet_client=p,
+                          action_repeat=3,
+                          time_step=0.001,
+                          control_latency=0.0)
             motor_kps = np.array([KPA,KP,KP] * 4)
             motor_kds = np.array([KDA,KD,KD] * 4)
             robot.SetMotorGains(motor_kps, motor_kds)

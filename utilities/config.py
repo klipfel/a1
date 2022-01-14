@@ -1,5 +1,8 @@
 import numpy as np
 
+# TODO add yaml file reading, so that you could save conf and then ask to load them with CLI.
+# TODO you can use ruamel.yaml https://yaml.readthedocs.io/en/latest/install.html
+
 class Config:
     # TO SET.
     POLICY_DIR = "./weights/16rueoxi/raw/"
