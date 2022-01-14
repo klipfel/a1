@@ -1,6 +1,7 @@
 from utilities.config import Config
 import numpy as np
 import os
+import datetime
 
 
 class Logger:
@@ -22,8 +23,10 @@ class Logger:
             self.data_to_log["robot_action"] = action_ref
 
     def log(self):
-        if not os.path.exists(Config.LOGDIR):
-            os.makedirs(Config.LOGDIR)
+        date = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        folder = Config.LOGDIR + "/" + date
+        if not os.path.exists(folder):
+            os.makedirs(folder)
         for data_name in self.data_to_log:
-            np.savetxt(f"{Config.LOGDIR}/{data_name}.csv", self.data_to_log[data_name], fmt="%1.5f")
+            np.savetxt(f"{folder}/{data_name}.csv", self.data_to_log[data_name], fmt="%1.5f")
 

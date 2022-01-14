@@ -245,7 +245,6 @@ class ControlFramework:
         return self.obs_parser.observe()
 
 
-
 class Policy:
 
     def __init__(self, args, stochastic_test=False):
