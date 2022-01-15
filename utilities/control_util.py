@@ -58,6 +58,7 @@ class ControlFramework:
         parser.add_argument("-w", "--weight", help="pre-trained weight path", type=str, default=Config.WEIGHT_PATH)
         parser.add_argument("-obsn", "--obs_normalization", help="Normalize or not observations based on the data accumulated in Raisim.", type=bool, default=Config.OBS_NORMALIZATION)
         parser.add_argument("-rh", "--run_hdw", action='store_true', help="Apply actions on hardware.")
+        parser.add_argument("-arp", "--action_repeat", help="Repeats the action applied on hardware.", type=int, default=1)
         args = parser.parse_args()
         logging.info("WARNING: this code executes low-level controller on the robot.")
         logging.info("Make sure the robot is hang on rack before proceeding.")
@@ -101,7 +102,8 @@ class ControlFramework:
             p = bullet_client.BulletClient(connection_mode=pybullet.DIRECT)
             p.setAdditionalSearchPath(pybullet_data.getDataPath())
             # Hardware class for the robot. (wrapper)
-            robot = a1_robot.A1Robot(pybullet_client=p, action_repeat=1)
+            robot = a1_robot.A1Robot(pybullet_client=p,
+                                     action_repeat=args.action_repeat)
             robot.motor_kps = np.array([KPA,KP,KP] * 4)
             robot.motor_kds = np.array([KDA,KD,KD] * 4)
             print("Robot Kps: ", robot.motor_kps)
@@ -126,7 +128,7 @@ class ControlFramework:
             p.setAdditionalSearchPath(pybullet_data.getDataPath())
             p.loadURDF("plane.urdf")
             robot = a1.A1(pybullet_client=p,
-                          action_repeat=3,
+                          action_repeat=args.action_repeat,
                           time_step=0.001,
                           control_latency=0.0)
             motor_kps = np.array([KPA,KP,KP] * 4)
@@ -205,7 +207,7 @@ class ControlFramework:
         print(LINE)
         print("PREPARES ROBOT FOR POLICY...")
         print(f"Setting joint positions to: {self.ini_conf}")
-        current_motor_angle = np.array(self.robot.GetMotorAngles())
+        current_motor_angle = np.array(self.robot.GetTrueMotorAngles())
         print("Current joint positions:", current_motor_angle)
         for t in tqdm(range(nsteps)):
             blend_ratio = np.minimum(t / (nsteps*alpha), 1)
@@ -230,7 +232,7 @@ class ControlFramework:
             action_robot = self.action_bridge.adapt(action_np)
             # Adds residual to nomimal configuration.
             joint_target = action_robot.flatten() + self.ini_conf
-            current_motor_angle = np.array(self.robot.GetMotorAngles())
+            current_motor_angle = np.array(self.robot.GetTrueMotorAngles())
             for k in range(self.args.nrepeat):
                 blend_ratio = np.minimum(k / (self.args.nrepeat-1), 1)
                 intermediary_joint_target = (1 - blend_ratio) * current_motor_angle + blend_ratio * joint_target
@@ -404,17 +406,17 @@ class ObservationParser:
         self.obs_rms.var = np.loadtxt(var_file_name, dtype=np.float32, max_rows=1)
 
     def observe(self):
-        self.motor_angles = self.robot.GetMotorAngles()  # in [-\pi;+\pi]
-        self.motor_angle_rates = self.robot.GetMotorVelocities()
+        self.motor_angles = self.robot.GetTrueMotorAngles()  # in [-\pi;+\pi]
+        self.motor_angle_rates = self.robot.GetTrueMotorVelocities()
         # TODO is the angular vel here the same as the one given in Raisim, they might be using quaternions ....
         # TODO but it has 3 coordinates so I guess it is the true angular vel. Difference between ang vel returned by simulation
         # TODO and the one computed.
         # TODO is the leg order the same?
         if self.args.mode == "hdw":
-            self.rpy = np.array(self.robot.GetBaseRollPitchYaw())
+            self.rpy = np.array(self.robot.GetTrueBaseRollPitchYaw())
         else:
-            self.rpy = self.robot.GetBaseRollPitchYaw()
-        self.rpy_rate = self.robot.GetBaseRollPitchYawRate()
+            self.rpy = self.robot.GetTrueBaseRollPitchYaw()
+        self.rpy_rate = self.robot.GetTrueBaseRollPitchYawRate()
         self.foot_positions_in_base_frame = self.robot.GetFootPositionsInBaseFrame()
         # Prepares measurements for the policy.
         if self.current_obs is not None:
