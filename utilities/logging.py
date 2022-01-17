@@ -7,7 +7,7 @@ import datetime
 class Logger:
 
     def __init__(self, obs_ref=None, obsn_ref=None, action_policy_ref=None,
-                 action_ref=None):
+                 action_ref=None, policy_dt_ref=None):
         """
         :param obs_ref: ref to the obs buffer.
         Any mutable object (list, dict, arrays) that contains data you want to store.
@@ -21,7 +21,9 @@ class Logger:
             self.data_to_log["policy_action"] = action_policy_ref
         if action_ref is not None:
             self.data_to_log["robot_action"] = action_ref
-
+        if policy_dt_ref is not None:
+            self.data_to_log["control_times"] = policy_dt_ref
+            
     def log(self):
         date = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         folder = Config.LOGDIR + "/" + date

@@ -130,7 +130,7 @@ class ControlFramework:
             robot = a1.A1(pybullet_client=p,
                           action_repeat=args.action_repeat,
                           time_step=0.001,
-                          control_latency=0.0)
+                          control_latency=0.02)
             motor_kps = np.array([KPA,KP,KP] * 4)
             motor_kds = np.array([KDA,KD,KD] * 4)
             robot.SetMotorGains(motor_kps, motor_kds)
@@ -153,17 +153,21 @@ class ControlFramework:
                                             policy_iteration=self.policy_it)
         self.action_bridge = ActionBridge(self.robot)
         self.ini_conf = Config.INI_JOINT_CONFIG
+        # Buffers.
+        self.policy_dt_buffer = []
         # Logger.
         if args.obs_normalization:
             self.logger = Logger(obs_ref=self.obs_parser.obs_buffer,
                                  obsn_ref=self.obs_parser.obsn_buffer,
                                  action_policy_ref=self.action_bridge.action_policy_buffer,
-                                 action_ref=self.action_bridge.action_buffer
+                                 action_ref=self.action_bridge.action_buffer,
+                                 policy_dt_ref=self.policy_dt_buffer
                                  )
         else:
             self.logger = Logger(obs_ref=self.obs_parser.obs_buffer,
                                  action_policy_ref=self.action_bridge.action_policy_buffer,
-                                 action_ref=self.action_bridge.action_buffer
+                                 action_ref=self.action_bridge.action_buffer,
+                                 policy_dt_ref=self.policy_dt_buffer
                                  )
 
     def policy_info_from_dir_path(self):
@@ -227,6 +231,10 @@ class ControlFramework:
         self.set_pd_gains(motor_kps=np.array([self.args.kp_policy] * 12),
                           motor_kds=np.array([self.args.kd_policy] * 12))
         for _ in tqdm(range(self.args.nsteps)):
+            # Time measurements
+            times = []
+            t0 = time.time()
+
             obs = self.observe()
             action_np = self.policy.inference(obs)
             action_robot = self.action_bridge.adapt(action_np)
@@ -234,6 +242,8 @@ class ControlFramework:
             joint_target = action_robot.flatten() + self.ini_conf
             current_motor_angle = np.array(self.robot.GetTrueMotorAngles())
             for k in range(self.args.nrepeat):
+                t10 = time.time()
+
                 blend_ratio = np.minimum(k / (self.args.nrepeat-1), 1)
                 intermediary_joint_target = (1 - blend_ratio) * current_motor_angle + blend_ratio * joint_target
                 if self.is_sim_env:
@@ -242,7 +252,16 @@ class ControlFramework:
                     self.robot.Step(intermediary_joint_target, robot_config.MotorControlMode.POSITION)
                 else:
                     logging.error("ERROR: unsupported mode. Either sim or hdw.")
+
                 time.sleep(self.args.dt_policy)
+                t11 = time.time()
+                measured_repeat_dt = t11-t10
+                times.append(measured_repeat_dt)
+            t1 = time.time()
+            measured_policy_dt = t1-t0
+            times.append(measured_policy_dt)
+            # Adds to buffer.
+            self.policy_dt_buffer.append(np.array(times))
         print(LINE)
 
     def observe(self):
