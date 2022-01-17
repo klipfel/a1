@@ -64,6 +64,7 @@ def main():
     # print("Final joint positions error:", np.linalg.norm(np.array(cf.robot.GetMotorAngles())-desired_motor_angle))
 
     cf.logger.log()
+    cf.logger.save_args()
 
     if cf.is_hdw:
         cf.robot.Terminate()

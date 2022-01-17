@@ -170,7 +170,8 @@ class ControlFramework:
         self.last_state_time_buffer = []
         # Logger.
         if args.obs_normalization:
-            self.logger = Logger(obs_ref=self.obs_parser.obs_buffer,
+            self.logger = Logger(args=self.args,
+                                 obs_ref=self.obs_parser.obs_buffer,
                                  obsn_ref=self.obs_parser.obsn_buffer,
                                  action_policy_ref=self.action_bridge.action_policy_buffer,
                                  action_ref=self.action_bridge.action_buffer,
@@ -179,7 +180,8 @@ class ControlFramework:
                                  last_state_time_ref=self.last_state_time_buffer
                                  )
         else:
-            self.logger = Logger(obs_ref=self.obs_parser.obs_buffer,
+            self.logger = Logger(args=self.args,
+                                 obs_ref=self.obs_parser.obs_buffer,
                                  action_policy_ref=self.action_bridge.action_policy_buffer,
                                  action_ref=self.action_bridge.action_buffer,
                                  policy_dt_ref=self.policy_dt_buffer,
