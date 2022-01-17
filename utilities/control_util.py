@@ -268,7 +268,10 @@ class ControlFramework:
                 t10 = time.time()
 
                 blend_ratio = np.minimum(k / (self.args.nrepeat-1), 1)
-                intermediary_joint_target = (1 - blend_ratio) * current_motor_angle + blend_ratio * joint_target
+                if self.args.run_hdw:
+                    intermediary_joint_target = (1 - blend_ratio) * current_motor_angle + blend_ratio * joint_target
+                else:
+                    intermediary_joint_target = Config.INI_JOINT_CONFIG
                 # Store time data on obsrevations and actions
                 # last_action_times.append(self.robot.last_action_time)
                 # last_state_times.append(self.robot.last_state_time)

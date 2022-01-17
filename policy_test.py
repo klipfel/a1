@@ -41,8 +41,10 @@ def main():
         cf.robot.Step(Config.INI_JOINT_CONFIG, robot_config.MotorControlMode.POSITION)
         time.sleep(0.01)
     # Runs policy.
-    if cf.args.run_hdw:
-        cf.run()
+    # if cf.args.run_hdw:
+    #     cf.run()
+
+    cf.run()
 
     # cf.obs_parser.get_obs_std()
     # cf.obs_parser.print_obs_std()
