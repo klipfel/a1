@@ -124,7 +124,8 @@ class ControlFramework:
             p.setPhysicsEngineParameter(numSolverIterations=num_bullet_solver_iterations)
             p.setPhysicsEngineParameter(enableConeFriction=0)
             p.setPhysicsEngineParameter(numSolverIterations=30)
-            simulation_time_step = 0.001
+            simulation_time_step = 0.001  # TODO understand how that is translated on the hdw. Makes the robot fail
+            # TODO as on the real hdw when set to > 0.003 s
             p.setTimeStep(simulation_time_step)
             p.setGravity(0, 0, -9.8)
             p.setPhysicsEngineParameter(enableConeFriction=0)
