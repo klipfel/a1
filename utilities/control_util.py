@@ -270,14 +270,14 @@ class ControlFramework:
                 blend_ratio = np.minimum(k / (self.args.nrepeat-1), 1)
                 intermediary_joint_target = (1 - blend_ratio) * current_motor_angle + blend_ratio * joint_target
                 # Store time data on obsrevations and actions
-                last_action_times.append(self.robot.last_action_time)
-                last_state_times.append(self.robot.last_state_time)
-                if len(last_action_times) > 1:
-                    action_dt.append(last_action_times[-1]-last_action_times[-2])
-                    state_dt.append(last_state_times[-1]-last_state_times[-2])
-                else:
-                    action_dt.append(last_action_times[-1])
-                    state_dt.append(last_state_times[-1])
+                # last_action_times.append(self.robot.last_action_time)
+                # last_state_times.append(self.robot.last_state_time)
+                # if len(last_action_times) > 1:
+                #     action_dt.append(last_action_times[-1]-last_action_times[-2])
+                #     state_dt.append(last_state_times[-1]-last_state_times[-2])
+                # else:
+                #     action_dt.append(last_action_times[-1])
+                #     state_dt.append(last_state_times[-1])
                 # Applies commands.
                 if self.is_sim_env:
                     self.env.step(intermediary_joint_target)
@@ -296,8 +296,8 @@ class ControlFramework:
             times.append(measured_policy_dt)
             # Adds to buffer.
             self.policy_dt_buffer.append(np.array(times))
-            self.last_action_time_buffer.append(np.array(action_dt))
-            self.last_state_time_buffer.append(np.array(state_dt))
+            # self.last_action_time_buffer.append(np.array(action_dt))
+            # self.last_state_time_buffer.append(np.array(state_dt))
         print(LINE)
 
     def observe(self):
