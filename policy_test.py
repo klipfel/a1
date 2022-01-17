@@ -75,4 +75,4 @@ if __name__ == '__main__':
         main()
     except KeyboardInterrupt:
         cf.logger.log()
-
+        cf.logger.save_args()
