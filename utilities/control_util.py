@@ -51,6 +51,7 @@ class ControlFramework:
         parser.add_argument("--kda", help='Derivative for hip.', type=float, default=0.5)
         parser.add_argument("--dt", help="Control time step.", type=float, default=0.01)
         parser.add_argument("--dt_policy", help="Control time step for the policy test.", type=float, default=0.005)
+        parser.add_argument("--time_step", help="Control time step between two repeated commands when calling the Step function.", type=float, default=0.001)
         parser.add_argument("--nsteps", help="Total control steps to reach joint position.", type=int, default=200)
         parser.add_argument("--nrepeat", help="Number of steps to control to intermediary targets between policy commands.", type=int, default=5)
         parser.add_argument("--sp", help="Smoothing percentage.", type=float, default=2/3)
@@ -103,7 +104,9 @@ class ControlFramework:
             p.setAdditionalSearchPath(pybullet_data.getDataPath())
             # Hardware class for the robot. (wrapper)
             robot = a1_robot.A1Robot(pybullet_client=p,
-                                     action_repeat=args.action_repeat)
+                                     action_repeat=args.action_repeat,
+                                     time_step=args.time_step,
+                                     control_latency=0.0)
             robot.motor_kps = np.array([KPA,KP,KP] * 4)
             robot.motor_kds = np.array([KDA,KD,KD] * 4)
             print("Robot Kps: ", robot.motor_kps)
@@ -127,10 +130,17 @@ class ControlFramework:
             p.setPhysicsEngineParameter(enableConeFriction=0)
             p.setAdditionalSearchPath(pybullet_data.getDataPath())
             p.loadURDF("plane.urdf")
+            """
+            action_repeat: The number of simulation steps that the same action is
+            repeated.
+            TODO what is the equivalent on hardware?
+            """
             robot = a1.A1(pybullet_client=p,
                           action_repeat=args.action_repeat,
-                          time_step=0.001,
-                          control_latency=0.02)
+                          time_step=args.time_step,
+                          control_latency=0.0,
+                          enable_action_interpolation=True,
+                          enable_action_filter=False)
             motor_kps = np.array([KPA,KP,KP] * 4)
             motor_kds = np.array([KDA,KD,KD] * 4)
             robot.SetMotorGains(motor_kps, motor_kds)
@@ -155,19 +165,25 @@ class ControlFramework:
         self.ini_conf = Config.INI_JOINT_CONFIG
         # Buffers.
         self.policy_dt_buffer = []
+        self.last_action_time_buffer = []
+        self.last_state_time_buffer = []
         # Logger.
         if args.obs_normalization:
             self.logger = Logger(obs_ref=self.obs_parser.obs_buffer,
                                  obsn_ref=self.obs_parser.obsn_buffer,
                                  action_policy_ref=self.action_bridge.action_policy_buffer,
                                  action_ref=self.action_bridge.action_buffer,
-                                 policy_dt_ref=self.policy_dt_buffer
+                                 policy_dt_ref=self.policy_dt_buffer,
+                                 last_action_time_ref=self.last_action_time_buffer,
+                                 last_state_time_ref=self.last_state_time_buffer
                                  )
         else:
             self.logger = Logger(obs_ref=self.obs_parser.obs_buffer,
                                  action_policy_ref=self.action_bridge.action_policy_buffer,
                                  action_ref=self.action_bridge.action_buffer,
-                                 policy_dt_ref=self.policy_dt_buffer
+                                 policy_dt_ref=self.policy_dt_buffer,
+                                 last_action_time_ref=self.last_action_time_buffer,
+                                 last_state_time_ref=self.last_state_time_buffer
                                  )
 
     def policy_info_from_dir_path(self):
@@ -233,6 +249,10 @@ class ControlFramework:
         for _ in tqdm(range(self.args.nsteps)):
             # Time measurements
             times = []
+            last_action_times = []
+            last_state_times = []
+            action_dt = []  # time between action application
+            state_dt = []  # time between obs readings.
             t0 = time.time()
 
             obs = self.observe()
@@ -246,6 +266,16 @@ class ControlFramework:
 
                 blend_ratio = np.minimum(k / (self.args.nrepeat-1), 1)
                 intermediary_joint_target = (1 - blend_ratio) * current_motor_angle + blend_ratio * joint_target
+                # Store time data on obsrevations and actions
+                last_action_times.append(self.robot.last_action_time)
+                last_state_times.append(self.robot.last_state_time)
+                if len(last_action_times) > 1:
+                    action_dt.append(last_action_times[-1]-last_action_times[-2])
+                    state_dt.append(last_state_times[-1]-last_state_times[-2])
+                else:
+                    action_dt.append(last_action_times[-1])
+                    state_dt.append(last_state_times[-1])
+                # Applies commands.
                 if self.is_sim_env:
                     self.env.step(intermediary_joint_target)
                 elif self.is_hdw or self.is_sim_gui:
@@ -257,11 +287,14 @@ class ControlFramework:
                 t11 = time.time()
                 measured_repeat_dt = t11-t10
                 times.append(measured_repeat_dt)
+
             t1 = time.time()
             measured_policy_dt = t1-t0
             times.append(measured_policy_dt)
             # Adds to buffer.
             self.policy_dt_buffer.append(np.array(times))
+            self.last_action_time_buffer.append(np.array(action_dt))
+            self.last_state_time_buffer.append(np.array(state_dt))
         print(LINE)
 
     def observe(self):
