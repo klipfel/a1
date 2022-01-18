@@ -308,12 +308,13 @@ class ControlFramework:
             # Have a faster control that you desire and then use some wait to synchronize.
             # TODO add the delay in the repeat control loops.
             # TODO Rather than just waiting you could also add other intermedary control until a min time is reached
-            policy_time_to_wait = 0.025-measured_policy_dt
+            policy_time_to_wait = 0.02-measured_policy_dt
             if policy_time_to_wait > 0:
                 time.sleep(policy_time_to_wait)
             t2 = time.time()
             # Stores policy control time data.
             times.append(measured_policy_dt)
+            times.append(policy_time_to_wait)
             times.append(t2-t0)  # stores the policy control time + wait time.
             # Adds to buffer.
             self.policy_dt_buffer.append(np.array(times))
