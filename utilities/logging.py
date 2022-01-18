@@ -2,7 +2,7 @@ from utilities.config import Config
 import numpy as np
 import os
 import datetime
-
+# import pandas as pd
 
 class Logger:
 
@@ -38,7 +38,13 @@ class Logger:
         if not os.path.exists(folder):
             os.makedirs(folder)
         for data_name in self.data_to_log:
+            # TODO add labels to csv file, you can use pandas to do it
+            # TODO or just use the header arg of savetxt as in https://stackoverflow.com/questions/36210977/python-numpy-savetxt-header-has-extra-character
+            # Check if the first list of the buffer contains labels for the columns, if so removes them and use
+            # it after for labelling.
             np.savetxt(f"{folder}/{data_name}.csv", self.data_to_log[data_name], fmt="%1.5f")
+            # df = pd.read_csv(f"{folder}/{data_name}.csv", header=None)
+            # df.to_csv(f"{folder}/{data_name}_labels.csv", header=["Letter", "Number", "Symbol"], index=False)
 
     def save_args(self):
         if self.args is not None and self.folder is not None:

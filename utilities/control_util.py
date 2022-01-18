@@ -261,9 +261,12 @@ class ControlFramework:
             action_dt = []  # time between action application
             state_dt = []  # time between obs readings.
             t0 = time.time()
-
             obs = self.observe()
+            tinf0 = time.time()  # measures inference times.
             action_np = self.policy.inference(obs)
+            tinf1 = time.time()
+            times.append(tinf0-t0)  # sensor reading time.
+            times.append(tinf1-tinf0)  # policy inference time.
             action_robot = self.action_bridge.adapt(action_np)
             # Adds residual to nomimal configuration.
             joint_target = action_robot.flatten() + self.ini_conf
