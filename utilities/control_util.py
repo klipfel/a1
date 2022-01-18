@@ -38,7 +38,7 @@ class ControlFramework:
     def __init__(self,):
         # TODO Fix other boolean parameters have to use store_true or store_false.
         parser = argparse.ArgumentParser()
-        parser.add_argument("-v", "--visualize", help='visualization boolean.', type=bool, default=True)
+        parser.add_argument("-v", "--visualize", action='store_true', help='Activates the rendering in sim mode when present.')
         # TODO rack in hardware mode.
         parser.add_argument("-r", "--rack", help='rack boolean. If true the robot is considered to be on a rack. For now only in simulation', type=bool, default=True)
         parser.add_argument("-t", "--test_type", help='Type of the test: static.', type=str, default="static")
@@ -106,7 +106,7 @@ class ControlFramework:
             robot = a1_robot.A1Robot(pybullet_client=p,
                                      action_repeat=args.action_repeat,
                                      time_step=args.time_step,
-                                     control_latency=0.0)
+                                     control_latency=0.002)
             robot.motor_kps = np.array([KPA,KP,KP] * 4)
             robot.motor_kds = np.array([KDA,KD,KD] * 4)
             print("Robot Kps: ", robot.motor_kps)
@@ -114,18 +114,21 @@ class ControlFramework:
         # simulation using the pybullet GUI, no gym environment. Does not use tf, or any learning.
         elif args.mode == "simGui":
             from motion_imitation.robots import a1
-            # TODO implement that.
-            p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
-            p.setAdditionalSearchPath(pybullet_data.getDataPath())
-            p.configureDebugVisualizer(p.COV_ENABLE_GUI,0)
-            p.configureDebugVisualizer(p.COV_ENABLE_RENDERING,0)
+            if args.visualize:
+                p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
+                p.configureDebugVisualizer(p.COV_ENABLE_GUI,0)
+                p.configureDebugVisualizer(p.COV_ENABLE_RENDERING,0)
+            else:
+                p = bullet_client.BulletClient(connection_mode=pybullet.DIRECT)
+            # p.setAdditionalSearchPath(pybullet_data.getDataPath())
             p.setAdditionalSearchPath(pybullet_data.getDataPath())
             num_bullet_solver_iterations = 30
             p.setPhysicsEngineParameter(numSolverIterations=num_bullet_solver_iterations)
             p.setPhysicsEngineParameter(enableConeFriction=0)
             p.setPhysicsEngineParameter(numSolverIterations=30)
-            simulation_time_step = 0.001  # TODO understand how that is translated on the hdw. Makes the robot fail
+            simulation_time_step = args.time_step  # TODO understand how that is translated on the hdw. Makes the robot fail
             # TODO as on the real hdw when set to > 0.003 s
+            # TODO how does pybullet deal with real time and time steps?
             p.setTimeStep(simulation_time_step)
             p.setGravity(0, 0, -9.8)
             p.setPhysicsEngineParameter(enableConeFriction=0)
@@ -138,7 +141,7 @@ class ControlFramework:
             """
             robot = a1.A1(pybullet_client=p,
                           action_repeat=args.action_repeat,
-                          time_step=args.time_step,
+                          time_step=simulation_time_step,  # time step of the simulation
                           control_latency=0.0,
                           enable_action_interpolation=True,
                           enable_action_filter=False)
@@ -148,7 +151,8 @@ class ControlFramework:
             gains = robot.GetMotorGains()
             print("Robot Kps:", gains[0])
             print("Robot Kds:", gains[1])
-            p.configureDebugVisualizer(p.COV_ENABLE_RENDERING,1)
+            if args.visualize:
+                p.configureDebugVisualizer(p.COV_ENABLE_RENDERING,1)
         else:
             logging.error("ERROR: unsupported mode. Either sim or hdw.")
         robot.ReceiveObservation()
