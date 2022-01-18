@@ -59,6 +59,7 @@ class ControlFramework:
         parser.add_argument("-w", "--weight", help="pre-trained weight path", type=str, default=Config.WEIGHT_PATH)
         parser.add_argument("-obsn", "--obs_normalization", help="Normalize or not observations based on the data accumulated in Raisim.", type=bool, default=Config.OBS_NORMALIZATION)
         parser.add_argument("-rh", "--run_hdw", action='store_true', help="Apply actions on hardware.")
+        parser.add_argument("-ps", "--policy_synch_sleep", action='store_true', help="Synchronization of the policy control time step with sleep calls.")
         parser.add_argument("-arp", "--action_repeat", help="Repeats the action applied on hardware.", type=int, default=1)
         args = parser.parse_args()
         logging.info("WARNING: this code executes low-level controller on the robot.")
@@ -309,7 +310,7 @@ class ControlFramework:
             # TODO add the delay in the repeat control loops.
             # TODO Rather than just waiting you could also add other intermedary control until a min time is reached
             policy_time_to_wait = 0.020-measured_policy_dt
-            if policy_time_to_wait > 0:
+            if policy_time_to_wait > 0 and self.args.policy_synch_sleep:
                 time.sleep(policy_time_to_wait)
             t2 = time.time()
             # Stores policy control time data.
