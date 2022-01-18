@@ -303,7 +303,18 @@ class ControlFramework:
 
             t1 = time.time()
             measured_policy_dt = t1-t0
+            # Waits the necessary time to match the policy control frequency in case the sampling was too fast.
+            # In case the sampling is too slow nothing can be done. You should set other parameters in order to
+            # Have a faster control that you desire and then use some wait to synchronize.
+            # TODO add the delay in the repeat control loops.
+            # TODO Rather than just waiting you could also add other intermedary control until a min time is reached
+            policy_time_to_wait = 0.025-measured_policy_dt
+            if policy_time_to_wait > 0:
+                time.sleep(policy_time_to_wait)
+            t2 = time.time()
+            # Stores policy control time data.
             times.append(measured_policy_dt)
+            times.append(t2-t0)  # stores the policy control time + wait time.
             # Adds to buffer.
             self.policy_dt_buffer.append(np.array(times))
             # self.last_action_time_buffer.append(np.array(action_dt))
