@@ -36,6 +36,7 @@ def error(x, y):
 class ControlFramework:
 
     def __init__(self,):
+        # TODO add argcomplete for autocompletion in terminal.
         # TODO Fix other boolean parameters have to use store_true or store_false.
         parser = argparse.ArgumentParser()
         parser.add_argument("-v", "--visualize", action='store_true', help='Activates the rendering in sim mode when present.')
@@ -52,6 +53,7 @@ class ControlFramework:
         parser.add_argument("--dt", help="Control time step.", type=float, default=0.01)
         parser.add_argument("--dt_policy", help="Control time step for the policy test.", type=float, default=0.005)
         parser.add_argument("--time_step", help="Control time step between two repeated commands when calling the Step function.", type=float, default=0.001)
+        parser.add_argument("--max_policy_dt", help="Sets the maximum time in seconds between two sampling from the policy. Used in the adaptive controller.", type=float, default=0.020)
         parser.add_argument("--nsteps", help="Total control steps to reach joint position.", type=int, default=200)
         parser.add_argument("--nrepeat", help="Number of steps to control to intermediary targets between policy commands.", type=int, default=5)
         parser.add_argument("--sp", help="Smoothing percentage.", type=float, default=2/3)
@@ -60,6 +62,7 @@ class ControlFramework:
         parser.add_argument("-obsn", "--obs_normalization", help="Normalize or not observations based on the data accumulated in Raisim.", type=bool, default=Config.OBS_NORMALIZATION)
         parser.add_argument("-rh", "--run_hdw", action='store_true', help="Apply actions on hardware.")
         parser.add_argument("-ps", "--policy_synch_sleep", action='store_true', help="Synchronization of the policy control time step with sleep calls.")
+        parser.add_argument("-ac", "--adaptive_controller", action='store_true', help="If present the flag enables to select the AdaptiveController class.")
         parser.add_argument("-arp", "--action_repeat", help="Repeats the action applied on hardware.", type=int, default=1)
         args = parser.parse_args()
         logging.info("WARNING: this code executes low-level controller on the robot.")
@@ -254,78 +257,249 @@ class ControlFramework:
         print("Running the policy....")
         self.set_pd_gains(motor_kps=np.array([self.args.kp_policy] * 12),
                           motor_kds=np.array([self.args.kd_policy] * 12))
-        for _ in tqdm(range(self.args.nsteps)):
-            # Time measurements
-            times = []
-            last_action_times = []
-            last_state_times = []
-            action_dt = []  # time between action application
-            state_dt = []  # time between obs readings.
-            t0 = time.time()
-            obs = self.observe()
-            tinf0 = time.time()  # measures inference times.
-            action_np = self.policy.inference(obs)
-            tinf1 = time.time()
-            times.append(tinf0-t0)  # sensor reading time.
-            times.append(tinf1-tinf0)  # policy inference time.
-            action_robot = self.action_bridge.adapt(action_np)
-            # Adds residual to nomimal configuration.
-            joint_target = action_robot.flatten() + self.ini_conf
-            current_motor_angle = np.array(self.robot.GetTrueMotorAngles())
-            for k in range(self.args.nrepeat):
-                t10 = time.time()
+        if self.args.adaptive_controller:
+            controller = AdaptiveController(self)
+            controller.control()
+        else:
+            for _ in tqdm(range(self.args.nsteps)):
+                # Time measurements
+                times = []
+                last_action_times = []
+                last_state_times = []
+                action_dt = []  # time between action application
+                state_dt = []  # time between obs readings.
+                t0 = time.time()
+                obs = self.observe()
+                tinf0 = time.time()  # measures inference times.
+                action_np = self.policy.inference(obs)
+                tinf1 = time.time()
+                times.append(tinf0-t0)  # sensor reading time.
+                times.append(tinf1-tinf0)  # policy inference time.
+                action_robot = self.action_bridge.adapt(action_np)
+                # Adds residual to nomimal configuration.
+                joint_target = action_robot.flatten() + self.ini_conf
+                current_motor_angle = np.array(self.robot.GetTrueMotorAngles())
+                for k in range(self.args.nrepeat):
+                    t10 = time.time()
 
-                blend_ratio = np.minimum(k / (self.args.nrepeat-1), 1)
-                if self.args.run_hdw:
-                    intermediary_joint_target = (1 - blend_ratio) * current_motor_angle + blend_ratio * joint_target
-                else:
-                    intermediary_joint_target = Config.INI_JOINT_CONFIG
-                # Store time data on obsrevations and actions
-                # last_action_times.append(self.robot.last_action_time)
-                # last_state_times.append(self.robot.last_state_time)
-                # if len(last_action_times) > 1:
-                #     action_dt.append(last_action_times[-1]-last_action_times[-2])
-                #     state_dt.append(last_state_times[-1]-last_state_times[-2])
-                # else:
-                #     action_dt.append(last_action_times[-1])
-                #     state_dt.append(last_state_times[-1])
-                # Applies commands.
-                if self.is_sim_env:
-                    self.env.step(intermediary_joint_target)
-                elif self.is_hdw or self.is_sim_gui:
-                    self.robot.Step(intermediary_joint_target, robot_config.MotorControlMode.POSITION)
-                else:
-                    logging.error("ERROR: unsupported mode. Either sim or hdw.")
+                    blend_ratio = np.minimum(k / (self.args.nrepeat-1), 1)
+                    if self.args.run_hdw:
+                        intermediary_joint_target = (1 - blend_ratio) * current_motor_angle + blend_ratio * joint_target
+                    else:
+                        intermediary_joint_target = Config.INI_JOINT_CONFIG
+                    # Store time data on obsrevations and actions
+                    # last_action_times.append(self.robot.last_action_time)
+                    # last_state_times.append(self.robot.last_state_time)
+                    # if len(last_action_times) > 1:
+                    #     action_dt.append(last_action_times[-1]-last_action_times[-2])
+                    #     state_dt.append(last_state_times[-1]-last_state_times[-2])
+                    # else:
+                    #     action_dt.append(last_action_times[-1])
+                    #     state_dt.append(last_state_times[-1])
+                    # Applies commands.
+                    if self.is_sim_env:
+                        self.env.step(intermediary_joint_target)
+                    elif self.is_hdw or self.is_sim_gui:
+                        self.robot.Step(intermediary_joint_target, robot_config.MotorControlMode.POSITION)
+                    else:
+                        logging.error("ERROR: unsupported mode. Either sim or hdw.")
 
-                time.sleep(self.args.dt_policy)
-                t11 = time.time()
-                measured_repeat_dt = t11-t10
-                times.append(measured_repeat_dt)
+                    time.sleep(self.args.dt_policy)
+                    t11 = time.time()
+                    measured_repeat_dt = t11-t10
+                    times.append(measured_repeat_dt)
 
-            t1 = time.time()
-            measured_policy_dt = t1-t0
-            # Waits the necessary time to match the policy control frequency in case the sampling was too fast.
-            # In case the sampling is too slow nothing can be done. You should set other parameters in order to
-            # Have a faster control that you desire and then use some wait to synchronize.
-            # TODO add the delay in the repeat control loops.
-            # TODO Rather than just waiting you could also add other intermedary control until a min time is reached
-            policy_time_to_wait = 0.020-measured_policy_dt
-            if policy_time_to_wait > 0 and self.args.policy_synch_sleep:
-                time.sleep(policy_time_to_wait)
-            t2 = time.time()
-            # Stores policy control time data.
-            times.append(measured_policy_dt)
-            times.append(policy_time_to_wait)
-            times.append(t2-t0)  # stores the policy control time + wait time.
-            # Adds to buffer.
-            self.policy_dt_buffer.append(np.array(times))
-            # self.last_action_time_buffer.append(np.array(action_dt))
-            # self.last_state_time_buffer.append(np.array(state_dt))
+                t1 = time.time()
+                measured_policy_dt = t1-t0
+                # Waits the necessary time to match the policy control frequency in case the sampling was too fast.
+                # In case the sampling is too slow nothing can be done. You should set other parameters in order to
+                # Have a faster control that you desire and then use some wait to synchronize.
+                # TODO add the delay in the repeat control loops.
+                # TODO Rather than just waiting you could also add other intermedary control until a min time is reached
+                policy_time_to_wait = 0.020-measured_policy_dt
+                if policy_time_to_wait > 0 and self.args.policy_synch_sleep:
+                    time.sleep(policy_time_to_wait)
+                t2 = time.time()
+                # Stores policy control time data.
+                times.append(measured_policy_dt)
+                times.append(policy_time_to_wait)
+                times.append(t2-t0)  # stores the policy control time + wait time.
+                # Adds to buffer.
+                self.policy_dt_buffer.append(np.array(times))
+                # self.last_action_time_buffer.append(np.array(action_dt))
+                # self.last_state_time_buffer.append(np.array(state_dt))
         print(LINE)
+
+    def apply_action(self, action):
+        # Applies commands.
+        if self.is_sim_env:
+            self.env.step(action)
+        elif self.is_hdw or self.is_sim_gui:
+            self.robot.Step(action, robot_config.MotorControlMode.POSITION)
+        else:
+            logging.error("ERROR: unsupported mode. Either sim or hdw.")
 
     def observe(self):
         """Returns the agent observations."""
         return self.obs_parser.observe()
+
+
+class AdaptiveController:
+    # TODO timer class?
+    # TODO a function to just accumulate the timing data
+    # TODO avoid using function calls for rapid control?
+    # TODO compute blend_ration, generate int joint targets
+    # TODO class for latency model?
+    """
+    Adaptive controller for the hardware.
+    """
+    def __init__(self, cf):
+        self.cf = cf
+        self.robot = cf.robot
+        self.args = cf.args
+        self.policy_nsteps = self.args.nsteps
+        self.last_policy_dt = 0.0
+        self.policy_dt_buffer = []
+        self.max_policy_dt = cf.args.max_policy_dt  # in seconds.
+        self.min_interpolation_steps = 2
+        self.policy_loop_timer = Timer()
+        self.policy_target_buffer = [Config.INI_JOINT_CONFIG]
+        self.initial_blend_ratio = 1.0/300.0  # TODO evaluate that online? For now chosen very small.
+        self.interpolation_counter = 0
+        self.last_joint_target = None
+        self.last_interpolation_origin = None
+        self.last_control_dt = None
+        self.control_dt_loop = []  # control dt for one joint target.
+        self.control_dt_buffer = []  # control dt for all the joint targets so far.
+        self.last_interpolation_steps = 100  # random init.
+        self.time_left_before_new_target = None
+        # Buffers.
+        self.blend_ratio_buffer = []
+        self.current_blend_ratio = []  # for current policy joint target
+        self.interpolation_step_buffer = []
+        self.interpolation_steps = []
+
+    def control(self):
+        for policy_step in tqdm(range(self.policy_nsteps)):
+            self.policy_loop_timer.start()
+            # Sample a new action from the policy.
+            obs = self.cf.observe()
+            self.policy_loop_timer.checkpoint("observation")
+            action_np = self.cf.policy.inference(obs)
+            action_robot = self.cf.action_bridge.adapt(action_np)
+            # Adds residual to nomimal configuration.
+            self.last_joint_target = action_robot.flatten() + self.cf.ini_conf
+            self.last_interpolation_origin = self.policy_target_buffer[-1]
+            self.policy_target_buffer.append(self.last_joint_target)
+            self.policy_loop_timer.checkpoint("inference")
+            # Generate intermediary joint targets
+            self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
+            while self.last_interpolation_steps > 0:
+                self.interpolation_counter += 1
+                # Interpolation.
+                intermediary_joint_target = self.interpolate()
+                self.cf.apply_action(intermediary_joint_target)
+                self.policy_loop_timer.checkpoint("interpolation")
+                # Diagnosis.
+                # TODO measure the inter deltas, to get the while loop duration.
+                self.last_control_dt = self.policy_loop_timer.current_deltas[-1] - self.last_policy_dt
+                self.control_dt_loop.append(self.last_control_dt)
+                self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
+                self.time_left_before_new_target = self.max_policy_dt - self.last_policy_dt
+            # Compute policy time
+            self.policy_loop_timer.end("policy target end loop")
+            self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
+            # Buffer storage.
+            self.blend_ratio_buffer.append(self.current_blend_ratio)
+            self.control_dt_buffer.append(self.control_dt_loop)
+            self.cf.policy_dt_buffer.append(self.last_policy_dt)
+            self.interpolation_step_buffer.append(self.interpolation_steps)
+            # Another turn.
+            self.last_policy_dt = 0.0
+            self.last_interpolation_steps = 100
+            self.interpolation_counter = 0
+            self.current_blend_ratio = []
+            self.control_dt_loop = []
+            self.interpolation_steps = []
+        self.save_data()
+
+    def save_data(self):
+        # Logs data
+        # TODO if you want to see the data in nice column format you need to give to savetxt a list of arrays which
+        # TODO has the same size. Mine are changing.
+        self.cf.logger.log_now("control_dt_times", np.array(self.control_dt_buffer), fmt='%s', extension="csv")
+        self.cf.logger.log_now("blend_ratios", np.array(self.blend_ratio_buffer), fmt='%s', extension="csv")
+        self.cf.logger.log_now("deltas", np.array(self.policy_loop_timer.delta_history), fmt='%s', extension="csv")
+        self.cf.logger.log_now("interpolation_steps", np.array(self.interpolation_step_buffer), fmt='%s', extension="csv")
+
+    def interpolate(self):
+        # TODO what current motor angles should I use? I opt for the previous policy target and not for the
+        # TODO current joint angles.
+        # Blend ratio.
+        if self.interpolation_counter == 1:  # For the first interpolation a very small step is done.
+            # Used to evaluate the control time step.
+            blend_ratio = self.initial_blend_ratio
+        else:  # TODO use an average of previous control dt to estimate the control dt.
+            self.last_interpolation_steps = self.time_left_before_new_target//self.last_control_dt
+            self.interpolation_steps.append(self.last_interpolation_steps)
+            if self.last_interpolation_steps < self.min_interpolation_steps:
+                blend_ratio = 1.0
+            else:
+                blend_ratio = 1.0 / self.last_interpolation_steps
+        self.current_blend_ratio.append(blend_ratio)
+        # Interpolation
+        if self.args.run_hdw:
+            intermediary_joint_target = (1 - blend_ratio) * self.last_interpolation_origin\
+                                        + blend_ratio * self.last_joint_target
+        else:
+            intermediary_joint_target = Config.INI_JOINT_CONFIG
+        self.last_interpolation_origin = intermediary_joint_target
+        return intermediary_joint_target
+
+
+class Timer:
+
+    def __init__(self):
+        self.ref_time = None
+        self.current_times = []
+        self.total_durations = []
+        self.time_history = []
+        self.current_deltas = []
+        self.delta_history = []
+        self.delta_label = []
+        self.completed = 0
+
+    def start(self):
+        self.ref_time = time.time()
+        self.current_times = []
+        self.current_times.append(self.ref_time)
+
+    def end(self, label):
+        if self.completed == 0:
+            self.delta_label.append(label)
+        self.completed += 1
+        self.current_times.append(time.time())
+        self.total_durations.append(self.total_duration())
+        self.current_deltas.append(self.total_durations[-1])
+        self.delta_history.append(self.current_deltas)
+        self.time_history.append(self.current_times)
+
+    def total_duration(self):
+        return self.current_times[-1]-self.current_times[0]
+
+    def checkpoint(self, label):
+        if self.completed == 0:
+            self.delta_label.append(label)
+        self.current_times.append(time.time())
+        self.current_deltas.append(self.current_times[-1]-self.ref_time)
+
+
+class RobotModel:
+    """
+    Class that contains data on the robot itself.
+    """
+    def __init__(self):
+        pass
 
 
 class Policy:
