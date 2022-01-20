@@ -258,8 +258,8 @@ class ControlFramework:
         self.set_pd_gains(motor_kps=np.array([self.args.kp_policy] * 12),
                           motor_kds=np.array([self.args.kd_policy] * 12))
         if self.args.adaptive_controller:
-            controller = AdaptiveController(self)
-            controller.control()
+            self.controller = AdaptiveController(self)
+            self.controller.control()
         else:
             for _ in tqdm(range(self.args.nsteps)):
                 # Time measurements
@@ -429,7 +429,7 @@ class AdaptiveController:
         # TODO has the same size. Mine are changing.
         self.cf.logger.log_now("control_dt_times", np.array(self.control_dt_buffer), fmt='%s', extension="csv")
         self.cf.logger.log_now("blend_ratios", np.array(self.blend_ratio_buffer), fmt='%s', extension="csv")
-        self.cf.logger.log_now("deltas", np.array(self.policy_loop_timer.delta_history), fmt='%s', extension="csv")
+        # self.cf.logger.log_now("deltas", np.array(self.policy_loop_timer.delta_history), fmt='%s', extension="txt")
         self.cf.logger.log_now("interpolation_steps", np.array(self.interpolation_step_buffer), fmt='%s', extension="csv")
 
     def interpolate(self):

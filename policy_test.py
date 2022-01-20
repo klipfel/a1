@@ -77,4 +77,6 @@ if __name__ == '__main__':
         main()
     except KeyboardInterrupt:
         cf.logger.log()
+        if cf.args.adaptive_controller:
+            cf.controller.save_data()
         cf.logger.save_args()
