@@ -63,6 +63,9 @@ class ControlFramework:
         parser.add_argument("-rh", "--run_hdw", action='store_true', help="Apply actions on hardware.")
         parser.add_argument("-ps", "--policy_synch_sleep", action='store_true', help="Synchronization of the policy control time step with sleep calls.")
         parser.add_argument("-ac", "--adaptive_controller", action='store_true', help="If present the flag enables to select the AdaptiveController class.")
+        parser.add_argument("-fic", "--fixed_interpolation_controller", action='store_true', help="If present the flag enables to select the FixedInterpolationController class.")
+        parser.add_argument("--fic_policy_dt", help="Target control time step for policy sampling.", type=float, default=0.024)
+        parser.add_argument("--fic_ll_dt", help="Target control time step between two repeated commands when calling the Step function.", type=float, default=0.003)
         parser.add_argument("-arp", "--action_repeat", help="Repeats the action applied on hardware.", type=int, default=1)
         args = parser.parse_args()
         logging.info("WARNING: this code executes low-level controller on the robot.")
@@ -226,7 +229,6 @@ class ControlFramework:
         print("Robot Kps:", gains[0])
         print("Robot Kds:", gains[1])
 
-
     def go_to_initial_configuration(self, alpha=0.8, nsteps=2000, dt=0.005):
         """
         Sets the robot in an initial configuration. Preferably close to the ones the robot was trained on at the start
@@ -259,6 +261,10 @@ class ControlFramework:
                           motor_kds=np.array([self.args.kd_policy] * 12))
         if self.args.adaptive_controller:
             self.controller = AdaptiveController(self)
+            self.controller.control()
+        elif self.args.fixed_interpolation_controller:
+            self.controller = FixedInterpolationController(self)
+            print(self.controller)
             self.controller.control()
         else:
             for _ in tqdm(range(self.args.nsteps)):
@@ -351,7 +357,8 @@ class AdaptiveController:
     # TODO compute blend_ration, generate int joint targets
     # TODO class for latency model?
     """
-    Adaptive controller for the hardware.
+    Adaptive controller for the hardware. This controller does not use sleep between each motor calls, and
+    uses the maximum control bandwidth. Interpolation steps between 2 policy targets can vary.
     """
     def __init__(self, cf):
         self.cf = cf
@@ -380,6 +387,7 @@ class AdaptiveController:
         self.interpolation_steps = []
 
     def control(self):
+        # TODO add a sleep between each control command sent.
         for policy_step in tqdm(range(self.policy_nsteps)):
             self.policy_loop_timer.start()
             # Sample a new action from the policy.
@@ -403,6 +411,7 @@ class AdaptiveController:
                 # Diagnosis.
                 # TODO measure the inter deltas, to get the while loop duration.
                 self.last_control_dt = self.policy_loop_timer.current_deltas[-1] - self.last_policy_dt
+                self.sleep()
                 self.control_dt_loop.append(self.last_control_dt)
                 self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
                 self.time_left_before_new_target = self.max_policy_dt - self.last_policy_dt
@@ -423,13 +432,17 @@ class AdaptiveController:
             self.interpolation_steps = []
         self.save_data()
 
+    def sleep(self):
+        pass
+
     def save_data(self):
         # Logs data
         # TODO if you want to see the data in nice column format you need to give to savetxt a list of arrays which
         # TODO has the same size. Mine are changing.
         self.cf.logger.log_now("control_dt_times", np.array(self.control_dt_buffer), fmt='%s', extension="csv")
         self.cf.logger.log_now("blend_ratios", np.array(self.blend_ratio_buffer), fmt='%s', extension="csv")
-        # self.cf.logger.log_now("deltas", np.array(self.policy_loop_timer.delta_history), fmt='%s', extension="txt")
+        self.cf.logger.log_now("deltas", np.array(self.policy_loop_timer.delta_history), fmt='%s', extension="csv")
+        self.cf.logger.log_now("inter_deltas", np.array(self.policy_loop_timer.inter_delta_history), fmt='%s', extension="csv")
         self.cf.logger.log_now("interpolation_steps", np.array(self.interpolation_step_buffer), fmt='%s', extension="csv")
 
     def interpolate(self):
@@ -440,7 +453,7 @@ class AdaptiveController:
             # Used to evaluate the control time step.
             blend_ratio = self.initial_blend_ratio
         else:  # TODO use an average of previous control dt to estimate the control dt.
-            self.last_interpolation_steps = self.time_left_before_new_target//self.last_control_dt
+            self.last_interpolation_steps = int(self.time_left_before_new_target//self.last_control_dt)
             self.interpolation_steps.append(self.last_interpolation_steps)
             if self.last_interpolation_steps < self.min_interpolation_steps:
                 blend_ratio = 1.0
@@ -457,6 +470,86 @@ class AdaptiveController:
         return intermediary_joint_target
 
 
+class FixedInterpolationController(AdaptiveController):
+    """
+    This adaptive controller synchronizes the sampling of the policy to a fixed frequency, and syncrhonizes also each
+    interpolation steps between 2 policy targets.
+    """
+    def __init__(self, cf):
+
+        super(FixedInterpolationController, self).__init__(cf)
+
+        self.target_policy_dt = cf.args.fic_policy_dt
+        self.target_low_level_control_dt = cf.args.fic_ll_dt
+        self.target_interpolation_number = int(self.target_policy_dt//self.target_low_level_control_dt)
+
+    def __str__(self):
+        return(f"Fixed interpolation controller:\n Policy dt:{self.target_policy_dt}"
+               f"\n LL dt: {self.target_low_level_control_dt}"
+               f"\nNumber of interpolation steps: {self.target_interpolation_number}")
+
+    def control(self):
+        # TODO add a sleep between each control command sent.
+        for policy_step in tqdm(range(self.policy_nsteps)):
+            self.policy_loop_timer.start()
+            # Sample a new action from the policy.
+            obs = self.cf.observe()
+            self.policy_loop_timer.checkpoint("observation")
+            action_np = self.cf.policy.inference(obs)
+            action_robot = self.cf.action_bridge.adapt(action_np)
+            # Adds residual to nomimal configuration.
+            self.last_joint_target = action_robot.flatten() + self.cf.ini_conf
+            self.last_interpolation_origin = self.policy_target_buffer[-1]
+            self.policy_target_buffer.append(self.last_joint_target)
+            self.policy_loop_timer.checkpoint("inference")
+            # Generate intermediary joint targets
+            self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
+            for self.interpolation_counter in range(1, self.target_interpolation_number+1):
+                self.policy_loop_timer.checkpoint("interpolation")
+                # Interpolation.
+                intermediary_joint_target = self.interpolate()
+                self.cf.apply_action(intermediary_joint_target)
+                self.policy_loop_timer.checkpoint("interpolation")
+                # Diagnosis.
+                # TODO measure the inter deltas, to get the while loop duration.
+                self.last_control_dt = self.policy_loop_timer.current_inter_deltas[-1]
+                self.sleep()
+                self.control_dt_loop.append(self.last_control_dt)
+                self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
+                self.time_left_before_new_target = self.max_policy_dt - self.last_policy_dt
+            # Compute policy time
+            self.policy_loop_timer.end("policy target end loop")
+            self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
+            # Buffer storage.
+            self.blend_ratio_buffer.append(self.current_blend_ratio)
+            self.control_dt_buffer.append(self.control_dt_loop)
+            self.cf.policy_dt_buffer.append(self.last_policy_dt)
+            self.interpolation_step_buffer.append(self.interpolation_steps)
+            # Another turn.
+            self.last_policy_dt = 0.0
+            self.current_blend_ratio = []
+            self.control_dt_loop = []
+            self.interpolation_steps = []
+        self.save_data()
+
+    def interpolate(self):
+        blend_ratio = float(self.interpolation_counter)/float(self.target_interpolation_number)
+        self.interpolation_steps.append(self.target_interpolation_number)
+        self.current_blend_ratio.append(blend_ratio)
+        # Interpolation
+        if self.args.run_hdw:
+            intermediary_joint_target = (1 - blend_ratio) * self.last_interpolation_origin\
+                                        + blend_ratio * self.last_joint_target
+        else:
+            intermediary_joint_target = Config.INI_JOINT_CONFIG
+        return intermediary_joint_target
+    
+    def sleep(self):
+        time_to_wait = self.target_low_level_control_dt - self.last_control_dt 
+        if time_to_wait > 0:  # sleeps if the control was faster than the target.
+            time.sleep(time_to_wait)
+
+
 class Timer:
 
     def __init__(self):
@@ -467,12 +560,20 @@ class Timer:
         self.current_deltas = []
         self.delta_history = []
         self.delta_label = []
-        self.completed = 0
+        self.completed = 0  # cycle counter
+        self.current_inter_deltas = []
+        self.inter_delta_history = []
 
     def start(self):
+        self.reset()
         self.ref_time = time.time()
-        self.current_times = []
         self.current_times.append(self.ref_time)
+
+    def reset(self):
+        # resets tmp buffers.
+        self.current_inter_deltas = []
+        self.current_times = []
+        self.current_deltas = []
 
     def end(self, label):
         if self.completed == 0:
@@ -483,6 +584,8 @@ class Timer:
         self.current_deltas.append(self.total_durations[-1])
         self.delta_history.append(self.current_deltas)
         self.time_history.append(self.current_times)
+        self.current_inter_deltas.append(self.current_times[-1]-self.current_times[-2])
+        self.inter_delta_history.append(self.current_inter_deltas)
 
     def total_duration(self):
         return self.current_times[-1]-self.current_times[0]
@@ -492,6 +595,7 @@ class Timer:
             self.delta_label.append(label)
         self.current_times.append(time.time())
         self.current_deltas.append(self.current_times[-1]-self.ref_time)
+        self.current_inter_deltas.append(self.current_times[-1]-self.current_times[-2])
 
 
 class RobotModel:
