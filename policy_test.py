@@ -65,6 +65,8 @@ def main():
     print("Final joint positions:", np.array(cf.robot.GetMotorAngles()))
     # print("Final joint positions error:", np.linalg.norm(np.array(cf.robot.GetMotorAngles())-desired_motor_angle))
 
+    cf.go_to_initial_configuration()
+
     cf.logger.log()
     cf.logger.save_args()
     if cf.args.adaptive_controller:
