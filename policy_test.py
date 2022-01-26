@@ -67,6 +67,8 @@ def main():
 
     cf.logger.log()
     cf.logger.save_args()
+    if cf.args.adaptive_controller:
+        cf.controller.save_data()
 
     if cf.is_hdw:
         cf.robot.Terminate()

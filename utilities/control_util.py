@@ -64,7 +64,7 @@ class ControlFramework:
         parser.add_argument("-ps", "--policy_synch_sleep", action='store_true', help="Synchronization of the policy control time step with sleep calls.")
         parser.add_argument("-ac", "--adaptive_controller", action='store_true', help="If present the flag enables to select the AdaptiveController class.")
         parser.add_argument("-fic", "--fixed_interpolation_controller", action='store_true', help="If present the flag enables to select the FixedInterpolationController class.")
-        parser.add_argument("--fic_policy_dt", help="Target control time step for policy sampling.", type=float, default=0.024)
+        parser.add_argument("--fic_policy_dt", help="Target control time step for policy sampling.", type=float, default=0.025)
         parser.add_argument("--fic_ll_dt", help="Target control time step between two repeated commands when calling the Step function.", type=float, default=0.003)
         parser.add_argument("-arp", "--action_repeat", help="Repeats the action applied on hardware.", type=int, default=1)
         args = parser.parse_args()
@@ -504,6 +504,10 @@ class FixedInterpolationController(AdaptiveController):
             self.policy_loop_timer.checkpoint("inference")
             # Generate intermediary joint targets
             self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
+            self.time_left_before_new_target = self.target_policy_dt - self.last_policy_dt
+            self.target_interpolation_number = int(self.time_left_before_new_target/self.target_low_level_control_dt)
+            if self.last_policy_dt > 0.004:
+                print(logging.warning(f"[POLICY STEP {policy_step}] Inference takes longer than usual: {self.time_left_before_new_target} s."))
             for self.interpolation_counter in range(1, self.target_interpolation_number+1):
                 self.policy_loop_timer.checkpoint("interpolation")
                 # Interpolation.
@@ -516,10 +520,13 @@ class FixedInterpolationController(AdaptiveController):
                 self.sleep()
                 self.control_dt_loop.append(self.last_control_dt)
                 self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
-                self.time_left_before_new_target = self.max_policy_dt - self.last_policy_dt
+                self.time_left_before_new_target = self.target_policy_dt - self.last_policy_dt
             # Compute policy time
             self.policy_loop_timer.end("policy target end loop")
             self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
+            self.time_left_before_new_target = self.target_policy_dt - self.last_policy_dt
+            if self.time_left_before_new_target > 0.0:
+                time.sleep(self.time_left_before_new_target)  # synchronizes policy sampling
             # Buffer storage.
             self.blend_ratio_buffer.append(self.current_blend_ratio)
             self.control_dt_buffer.append(self.control_dt_loop)
