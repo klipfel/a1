@@ -69,8 +69,6 @@ def main():
 
     cf.logger.log()
     cf.logger.save_args()
-    if cf.args.adaptive_controller:
-        cf.controller.save_data()
 
     if cf.is_hdw:
         cf.robot.Terminate()
@@ -81,6 +79,6 @@ if __name__ == '__main__':
         main()
     except KeyboardInterrupt:
         cf.logger.log()
-        if cf.args.adaptive_controller:
+        if cf.args.adaptive_controller or cf.args.fixed_interpolation_controller:
             cf.controller.save_data()
         cf.logger.save_args()
