@@ -507,7 +507,7 @@ class FixedInterpolationController(AdaptiveController):
             self.time_left_before_new_target = self.target_policy_dt - self.last_policy_dt
             self.target_interpolation_number = int(self.time_left_before_new_target/self.target_low_level_control_dt)
             if self.last_policy_dt > 0.004:
-                print(logging.warning(f"[POLICY STEP {policy_step}] Inference takes longer than usual: {self.time_left_before_new_target} s."))
+                print(logging.warning(f"[POLICY STEP {policy_step}] Inference takes longer than usual: {self.last_policy_dt} s."))
             for self.interpolation_counter in range(1, self.target_interpolation_number+1):
                 self.policy_loop_timer.checkpoint("interpolation")
                 # Interpolation.
