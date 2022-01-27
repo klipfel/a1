@@ -482,6 +482,10 @@ class FixedInterpolationController(AdaptiveController):
         self.target_policy_dt = cf.args.fic_policy_dt
         self.target_low_level_control_dt = cf.args.fic_ll_dt
         self.target_interpolation_number = int(self.target_policy_dt//self.target_low_level_control_dt)
+        self.interpolation_counter = 1
+        self.max_control_delay = 1e-4
+        self.skip_nsteps = 0
+        self.reached_policy_target = False
 
     def __str__(self):
         return(f"Fixed interpolation controller:\n Policy dt:{self.target_policy_dt}"
@@ -505,10 +509,10 @@ class FixedInterpolationController(AdaptiveController):
             # Generate intermediary joint targets
             self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
             self.time_left_before_new_target = self.target_policy_dt - self.last_policy_dt
-            self.target_interpolation_number = int(self.time_left_before_new_target/self.target_low_level_control_dt)
-            if self.last_policy_dt > 0.004:
-                print(logging.warning(f"[POLICY STEP {policy_step}] Inference takes longer than usual: {self.last_policy_dt} s."))
-            for self.interpolation_counter in range(1, self.target_interpolation_number+1):
+            self.target_interpolation_number = int(self.time_left_before_new_target//self.target_low_level_control_dt)
+            if self.last_policy_dt > 0.005:
+                logging.warning(f"[POLICY STEP {policy_step}] Inference takes longer than usual: {self.last_policy_dt} s.")
+            while not self.reached_policy_target:
                 self.policy_loop_timer.checkpoint("interpolation")
                 # Interpolation.
                 intermediary_joint_target = self.interpolate()
@@ -517,10 +521,14 @@ class FixedInterpolationController(AdaptiveController):
                 # Diagnosis.
                 # TODO measure the inter deltas, to get the while loop duration.
                 self.last_control_dt = self.policy_loop_timer.current_inter_deltas[-1]
-                self.sleep()
+                # No sleep for the final control step.
+                if self.interpolation_counter < self.target_interpolation_number:
+                    self.sleep()
                 self.control_dt_loop.append(self.last_control_dt)
                 self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
                 self.time_left_before_new_target = self.target_policy_dt - self.last_policy_dt
+                self.interpolation_counter = min(self.interpolation_counter + 1 + self.skip_nsteps,
+                                                 self.target_interpolation_number)
             # Compute policy time
             self.policy_loop_timer.end("policy target end loop")
             self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
@@ -534,6 +542,8 @@ class FixedInterpolationController(AdaptiveController):
             self.interpolation_step_buffer.append(self.interpolation_steps)
             # Another turn.
             self.last_policy_dt = 0.0
+            self.interpolation_counter = 1
+            self.reached_policy_target = False
             self.current_blend_ratio = []
             self.control_dt_loop = []
             self.interpolation_steps = []
@@ -541,6 +551,8 @@ class FixedInterpolationController(AdaptiveController):
 
     def interpolate(self):
         blend_ratio = float(self.interpolation_counter)/float(self.target_interpolation_number)
+        if blend_ratio == 1.0:
+            self.reached_policy_target = True
         self.interpolation_steps.append(self.target_interpolation_number)
         self.current_blend_ratio.append(blend_ratio)
         # Interpolation
@@ -552,9 +564,22 @@ class FixedInterpolationController(AdaptiveController):
         return intermediary_joint_target
     
     def sleep(self):
-        time_to_wait = self.target_low_level_control_dt - self.last_control_dt 
+        time_to_wait = self.target_low_level_control_dt - self.last_control_dt
         if time_to_wait > 0:  # sleeps if the control was faster than the target.
             time.sleep(time_to_wait)
+            self.skip_nsteps = 0
+        else:  # delay in the control time step.
+            self.skip_nsteps = int(-time_to_wait//self.target_low_level_control_dt)  # number of steps to skip.
+            logging.info(f"Delay in the control time step: {time_to_wait} ... skips {self.skip_nsteps} control steps.")
+            self.handle_control_delay(-time_to_wait)
+
+    def handle_control_delay(self, delay):
+        time_in_step = delay % self.target_low_level_control_dt
+        if time_in_step <= self.max_control_delay:  # acceptable control delay.
+            pass
+        else:
+            if self.interpolation_counter < self.target_interpolation_number-1:
+                time.sleep(self.target_low_level_control_dt - time_in_step)
 
 
 class Timer:
