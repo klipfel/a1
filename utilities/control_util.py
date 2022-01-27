@@ -509,7 +509,7 @@ class FixedInterpolationController(AdaptiveController):
             # Generate intermediary joint targets
             self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
             self.time_left_before_new_target = self.target_policy_dt - self.last_policy_dt
-            self.target_interpolation_number = int(self.time_left_before_new_target//self.target_low_level_control_dt)
+            self.target_interpolation_number = int(self.time_left_before_new_target//self.target_low_level_control_dt)+1
             if self.last_policy_dt > 0.005:
                 logging.warning(f"[POLICY STEP {policy_step}] Inference takes longer than usual: {self.last_policy_dt} s.")
             while not self.reached_policy_target:
