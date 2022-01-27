@@ -570,7 +570,7 @@ class FixedInterpolationController(AdaptiveController):
             self.skip_nsteps = 0
         else:  # delay in the control time step.
             self.skip_nsteps = int(-time_to_wait//self.target_low_level_control_dt)  # number of steps to skip.
-            logging.info(f"Delay in the control time step: {time_to_wait} ... skips {self.skip_nsteps} control steps.")
+            logging.warning(f"Delay in the control time step: {time_to_wait} ... skips {self.skip_nsteps} control steps.")
             self.handle_control_delay(-time_to_wait)
 
     def handle_control_delay(self, delay):
