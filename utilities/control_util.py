@@ -646,7 +646,7 @@ class Policy:
         from policy import ppo_module  # net architectures.
         # Inference done on the CPU.
         # TODO compare with GPU? in time
-        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+        # os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print("\nTorch device: ", self.device)
         # calculate i/o dimensions of the policy net.
