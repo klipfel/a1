@@ -669,10 +669,10 @@ class Policy:
         if self.stochastic_test:
             distribution = Normal(mean, std)
             stochastic_actions = distribution.sample()
-            action_np = stochastic_actions.cpu().detach().numpy()
+            action_np = stochastic_actions.cpu().numpy()
         else:
             action_ll = mean
-            action_np = action_ll.cpu().detach().numpy()
+            action_np = action_ll.cpu().numpy()
         self.action_ll = action_ll
         self.action_np = action_np
         return action_np
