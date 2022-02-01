@@ -660,7 +660,10 @@ class Policy:
         self.action_np = None
 
     def inference(self, obs):
-        action_ll = self.loaded_graph.forward(torch.from_numpy(obs).cpu())
+        # Inference mode context manager to remove grad computation, similar to no_grad.
+        # No need of the gradient for inference.
+        with torch.inference_mode():
+            action_ll = self.loaded_graph.forward(torch.from_numpy(obs).cpu())
         mean = action_ll[:, self.act_dim//2:]
         std = action_ll[:, :self.act_dim//2]
         if self.stochastic_test:
