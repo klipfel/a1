@@ -10,9 +10,11 @@ policy = Pyro5.api.Proxy(uri)     # get a Pyro proxy to the greeting object
 policy._pyroBind()
 policy._pyroSerializer = "marshal"  # faster communication.
 policy._pyroTimeout = 1.5    # 1.5 seconds
+obs = np.random.rand(60)
+print(f"obs: {obs}")
 while True:
     t0 = time.time()
-    action = policy.inference(1)
+    action = policy.inference(obs)
     # action = np.array(action, dtype=np.float32)
     # print(action)
     delta = time.time() - t0
