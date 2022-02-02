@@ -14,6 +14,5 @@ while True:
     action = policy.inference(1)
     action = np.array(action, dtype=np.float32)
     print(action)
-    print(policy.getpid())
     delta = time.time() - t0
     print(f"Time of inference: {delta}")
