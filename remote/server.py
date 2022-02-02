@@ -27,7 +27,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     logging.info("Starting inference server.")
     p_server = Policy()
-    daemon = Pyro5.api.Daemon(host="192.168.123.24")             # make a Pyro daemon
+    daemon = Pyro5.api.Daemon(host="192.168.123.24", port=2020)             # make a Pyro daemon
     ns = Pyro5.api.locate_ns()             # find the name server
     # TODO not sure about how to register or what to register, will I have to different objects? Maybe it is better to
     # TODO create a wrapper of the policy class in the control utilities.
