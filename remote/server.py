@@ -13,11 +13,14 @@ class Policy:
         self.joint_position_target = [1]*12
         self.pid = numpy.random.randint(0,10)
 
-    @Pyro5.server.expose
-    def inference(self, obs):      # exposed as 'proxy.attr' writable
+    def processing(self, obs):
         numpy_array = numpy.array([1,2,12.6456110,54.4545154,2.5645154,5,2,5.5455451,2,5,25,4,2,54,2,5,5,56,4], dtype=numpy.float32)
         self.joint_position_target = numpy_array.tolist()
         return self.joint_position_target
+
+    @Pyro5.server.expose
+    def inference(self, obs):      # exposed as 'proxy.attr' writable
+        return self.processing(obs)
 
     def getpid(self):
         return self.pid
