@@ -7,6 +7,7 @@ uri = input("What is the Pyro uri of the greeting object? ").strip()
 name = input("What is your name? ").strip()
 
 policy = Pyro5.api.Proxy(uri)     # get a Pyro proxy to the greeting object
+policy._pyroBind()
 policy._pyroSerializer = "marshal"  # faster communication.
 policy._pyroTimeout = 1.5    # 1.5 seconds
 while True:
