@@ -19,3 +19,4 @@ while True:
     # print(action)
     delta = time.time() - t0
     print(f"Time of inference: {delta}")
+    print(obs)
