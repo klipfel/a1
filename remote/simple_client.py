@@ -1,7 +1,17 @@
 # saved as greeting-client.py
 import Pyro5.api
+import numpy as np
+import time
 
 uri = input("What is the Pyro uri of the greeting object? ").strip()
 name = input("What is your name? ").strip()
 
 policy = Pyro5.api.Proxy(uri)     # get a Pyro proxy to the greeting object
+policy._pyroSerializer = "marshal"  # faster communication.
+policy._pyroTimeout = 1.5    # 1.5 seconds
+while True:
+    action = policy.inference(1)
+    action = np.array(action, dtype=np.float32)
+    print(action)
+    print(policy.getpid())
+    time.sleep(1)
