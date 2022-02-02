@@ -14,7 +14,7 @@ obs = np.random.rand(60)
 print(f"obs: {obs}")
 while True:
     t0 = time.time()
-    action = policy.inference(obs)
+    action = policy.inference(obs.tolist())
     # action = np.array(action, dtype=np.float32)
     # print(action)
     delta = time.time() - t0
