@@ -13,7 +13,7 @@ policy._pyroTimeout = 1.5    # 1.5 seconds
 while True:
     t0 = time.time()
     action = policy.inference(1)
-    action = np.array(action, dtype=np.float32)
-    print(action)
+    # action = np.array(action, dtype=np.float32)
+    # print(action)
     delta = time.time() - t0
     print(f"Time of inference: {delta}")
