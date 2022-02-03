@@ -40,9 +40,11 @@ class Policy:
         # Load policy net.
         self.loaded_graph = ppo_module.HafnerActorModelStd(self.ob_dim, self.act_dim)
         self.loaded_graph.load_state_dict(torch.load(self.weight_path, map_location=self.device)["actor_architecture_state_dict"])
+        self.inference_times = []
 
     @Pyro5.server.expose
     def inference(self, obs):
+        t0 = time.time()
         # Inference mode context manager to remove grad computation, similar to no_grad.
         # No need of the gradient for inference.
         obs = recover_data(obs)
@@ -52,16 +54,22 @@ class Policy:
             mean = action_ll[:, self.act_dim//2:]
             action_np = mean.cpu().numpy()
         # TODO adapt numpy array to list and 1D, do I have as many row as env I trained on?
-        return adapt_data_for_comm(action_np)
+        out = adapt_data_for_comm(action_np)
+        delta = time.time() -t0
+        self.inference_times.append(delta)
+        return out
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    logging.info("Starting inference server.")
-    p_server = Policy()
-    daemon = Pyro5.api.Daemon(host=args.host, port=args.port)             # make a Pyro daemon
-    ns = Pyro5.api.locate_ns()             # find the name server
-    uri = daemon.register(Policy)    # register the greeting maker as a Pyro object
-    ns.register("laptop.inference", uri)   # register the object with a name in the name server
-    print(f"Ready. Object uri:\n{uri}")       # print the uri so we can use it in the client later
-    daemon.requestLoop()                    # start the event loop of the server to wait for calls
+    try:
+        logging.basicConfig(level=logging.INFO)
+        logging.info("Starting inference server.")
+        p_server = Policy()
+        daemon = Pyro5.api.Daemon(host=args.host, port=args.port)             # make a Pyro daemon
+        ns = Pyro5.api.locate_ns()             # find the name server
+        uri = daemon.register(Policy)    # register the greeting maker as a Pyro object
+        ns.register("laptop.inference", uri)   # register the object with a name in the name server
+        print(f"Ready. Object uri:\n{uri}")       # print the uri so we can use it in the client later
+        daemon.requestLoop()                    # start the event loop of the server to wait for calls
+    except KeyboardInterrupt:
+        print(f"Inference times: {p_server.inference_times}")
