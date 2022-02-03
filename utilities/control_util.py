@@ -542,8 +542,8 @@ class FixedInterpolationController(AdaptiveController):
             self.policy_loop_timer.end("policy target end loop")
             self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
             self.time_left_before_new_target = self.target_policy_dt - self.last_policy_dt
-            if self.time_left_before_new_target > 0.0:
-                time.sleep(self.time_left_before_new_target)  # synchronizes policy sampling
+            # if self.time_left_before_new_target > 0.0:
+            #     time.sleep(self.time_left_before_new_target)  # synchronizes policy sampling
             # Buffer storage.
             self.blend_ratio_buffer.append(self.current_blend_ratio)
             self.control_dt_buffer.append(self.control_dt_loop)
