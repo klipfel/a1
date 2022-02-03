@@ -503,7 +503,7 @@ class FixedInterpolationController(AdaptiveController):
 
     def control(self):
         # TODO add a sleep between each control command sent.
-        for policy_step in range(self.policy_nsteps):
+        for policy_step in tqdm(range(self.policy_nsteps)):
             self.policy_loop_timer.start()
             # Sample a new action from the policy.
             obs = self.cf.observe()

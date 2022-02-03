@@ -56,6 +56,7 @@ class Policy:
         # TODO adapt numpy array to list and 1D, do I have as many row as env I trained on?
         out = adapt_data_for_comm(action_np)
         delta = time.time() -t0
+        print(f"Inference time on laptop: {delta}")
         self.inference_times.append(delta)
         return out
 
