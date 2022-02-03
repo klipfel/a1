@@ -26,6 +26,10 @@ from utilities.logging import Logger
 import torch
 from torch.distributions import Normal
 
+# Remote client
+import Pyro5.api
+from remote.util import recover_data, adapt_data_for_comm
+
 LINE = "-"*100
 
 
@@ -67,7 +71,9 @@ class ControlFramework:
         parser.add_argument("--fic_policy_dt", help="Target control time step for policy sampling.", type=float, default=0.025)
         parser.add_argument("--fic_ll_dt", help="Target control time step between two repeated commands when calling the Step function.", type=float, default=0.003)
         parser.add_argument("-arp", "--action_repeat", help="Repeats the action applied on hardware.", type=int, default=1)
+        parser.add_argument("-u", "--uri", help="URI of the proxy of the Policy object", type=str, default=None)
         args = parser.parse_args()
+        logging.set_verbosity(logging.INFO)
         logging.info("WARNING: this code executes low-level controller on the robot.")
         logging.info("Make sure the robot is hang on rack before proceeding.")
         input("Press enter to continue...")
@@ -82,7 +88,10 @@ class ControlFramework:
         KPA = args.kpa
         KDA = args.kda
         # Policy setup.
-        self.policy = Policy(args)
+        if args.uri is not None:
+            self.policy = RemotePolicyAdapter(args.uri)
+        else:
+            self.policy = Policy(args)
         # Creates a simulation using a gym environment.
         if is_sim_env:
             from motion_imitation.robots import a1
@@ -646,7 +655,7 @@ class Policy:
         from policy import ppo_module  # net architectures.
         # Inference done on the CPU.
         # TODO compare with GPU? in time
-        # os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print("\nTorch device: ", self.device)
         # calculate i/o dimensions of the policy net.
@@ -676,6 +685,22 @@ class Policy:
             self.action_ll = action_ll
             self.action_np = action_np
         return action_np
+
+
+class RemotePolicyAdapter:
+
+    def __init__(self, uri):
+        self.policy = Pyro5.api.Proxy(uri)     # get a Pyro proxy to the greeting object
+        logging.info(f"Remote policy proxy @ {uri}")
+        print(f"Remote policy proxy @ {uri}")
+        self.policy._pyroBind()
+        self.policy._pyroSerializer = "marshal"  # faster communication.
+        self.policy._pyroTimeout = 1.5    # 1.5 seconds
+
+    def inference(self, obs):
+        obs_comm = adapt_data_for_comm(obs)
+        action = self.policy.inference(obs_comm)
+        return recover_data(action)
 
 
 class ActionBridge:
