@@ -1,0 +1,264 @@
+wandb_version: 1
+
+PPO:
+  desc: null
+  value:
+    entropy_coef: '0.01'
+_wandb:
+  desc: null
+  value:
+    cli_version: 0.12.7
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    python_version: 3.6.9
+    start_time: 1644353046
+    t:
+      1:
+      - 1
+      2:
+      - 1
+      3:
+      - 5
+      - 14
+      4: 3.6.9
+      5: 0.12.7
+      8:
+      - 5
+architecture:
+  desc: null
+  value:
+    policy_net:
+    - 256
+    - 256
+    - 100
+    - 24
+    value_net:
+    - 400
+    - 400
+    - 300
+environment:
+  desc: null
+  value:
+    Curriculum:
+      min_iteration: 500
+      z_scale_increment: '0.0'
+    Noise:
+      action: '0.001'
+      active: true
+      observation: '0.001'
+    Randomization:
+      Mass:
+        active: false
+        std: '0.05'
+      active: true
+      gains:
+        D:
+          max: '2.0'
+          min: '0.2'
+        P:
+          max: '50.0'
+          min: '25.0'
+        active: true
+      latency:
+        active: false
+        max: '5.0'
+      seedMode: 3
+    actionBoundCalf: '0.4'
+    actionBoundHip: '0.15'
+    actionBoundThigh: '0.4'
+    control_dt: '0.025'
+    curriculumThresholdDones: '0.0002'
+    delay_likelihood: 30
+    direction:
+      x: '1.0'
+      y: '0.0'
+      z: '0.0'
+    eval_every_n: 100
+    filter:
+      None:
+        mode: -1
+      exp:
+        coeff: '0.6'
+        mode: 0
+      mode: 1
+      window_average:
+        mode: 1
+        window_length: 5
+    gains:
+      D: '0.2'
+      P: '25.0'
+    maxAbsPitch: '0.2'
+    maxAbsRoll: '0.4'
+    maxAbsYaw: 100
+    maxSurvivalBonus: 20
+    maxVelocity: '1.5'
+    max_add_control_time_step: 0
+    max_time: '20.0'
+    min_add_control_time_step: 0
+    num_envs: 100
+    num_threads: 30
+    policy:
+      learn_std: true
+    render: false
+    reward:
+      action:
+        coeff: '0.0'
+      commandedDir:
+        coeff: 0
+      controlError:
+        coeff: '0.0'
+      driftVel:
+        coeff: '0.0'
+      driftY:
+        coeff: 0
+      energy:
+        coeff: 0
+      forwardVel:
+        coeff: '0.0'
+      jointPositionTargetsSmoothing:
+        coeff: 0
+      jointVelocities:
+        coeff: 0
+      orientation:
+        coeff: 0
+        thres: '0.1'
+      r_feet:
+        coeff: '0.5'
+      r_torso:
+        coeff: '1.0'
+      r_up:
+        coeff: '0.1'
+      r_walk:
+        coeff: 0
+      survivalBonus:
+        coeff: 0
+      torque:
+        coeff: '0.0'
+      velocityTracking:
+        coeff: 0
+      velocityTrackingPenalty:
+        coeff: 0
+      vy:
+        coeff: 0
+      vz:
+        coeff: 0
+      wz:
+        coeff: 0
+    rewardMaxFwVelocity: '0.375'
+    robotManualChoice: 2
+    robots:
+      a1:
+        Perturbation:
+          Duration: 200
+          FextStd_horizontal_x:
+            max: '20.0'
+            min: '20.0'
+          FextStd_horizontal_y:
+            max: '20.0'
+            min: '20.0'
+          FextStd_vertical:
+            max: '20.0'
+            min: '20.0'
+        calf:
+          backward: '0.0'
+          forward: '-1.0'
+        hip:
+          backward: '0.0'
+          forward: '0.0'
+        thigh:
+          backward: '0.7'
+          forward: '0.5'
+      aliengo:
+        Perturbation:
+          Duration: 200
+          FextStd_horizontal_x:
+            max: '0.0'
+            min: '-0.0'
+          FextStd_horizontal_y:
+            max: '0.0'
+            min: '0.0'
+          FextStd_vertical:
+            max: '0.0'
+            min: '0.0'
+        calf:
+          backward: '0.0'
+          forward: '-1.0'
+        hip:
+          backward: '0.0'
+          forward: '0.0'
+        thigh:
+          backward: '0.7'
+          forward: '0.5'
+      anymal:
+        Perturbation:
+          Duration: 200
+          FextStd_horizontal_x:
+            max: '0.0'
+            min: '-0.0'
+          FextStd_horizontal_y:
+            max: '0.0'
+            min: '0.0'
+          FextStd_vertical:
+            max: '0.0'
+            min: '0.0'
+      anymal_c:
+        Perturbation:
+          Duration: 200
+          FextStd_horizontal_x:
+            max: '0.0'
+            min: '-0.0'
+          FextStd_horizontal_y:
+            max: '0.0'
+            min: '0.0'
+          FextStd_vertical:
+            max: '0.0'
+            min: '0.0'
+      laikago:
+        Perturbation:
+          Duration: 200
+          FextStd_horizontal_x:
+            max: '0.0'
+            min: '-0.0'
+          FextStd_horizontal_y:
+            max: '0.0'
+            min: '0.0'
+          FextStd_vertical:
+            max: '0.0'
+            min: '0.0'
+        calf:
+          backward: '0.0'
+          forward: '-1.0'
+        hip:
+          backward: '0.0'
+          forward: '0.0'
+        thigh:
+          backward: '0.7'
+          forward: '0.5'
+    serverPort: 8080
+    simulation_dt: '0.0025'
+    terminalRewardCoeff:
+      angles: '-20.0'
+      contact: '-20.0'
+      velocity: '-20.0'
+    terrainProperties:
+      'ON': false
+      choice: 0
+      fractalGain: '0.25'
+      fractalLacunarity: '2.0'
+      fractalOctaves: 2
+      frequency: 10
+      xSamples: 10
+      xSize: '10.0'
+      ySamples: 10
+      ySize: '10.0'
+      zScale: '0.0'
+    test:
+      stochastic: true
+    testNumber: 1
+record_video:
+  desc: null
+  value: 'no'
+seed:
+  desc: null
+  value: 968388492
