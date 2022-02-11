@@ -50,8 +50,10 @@ class ControlFramework:
         parser.add_argument("-m", "--mode", help='sim or hdw', type=str, default="sim")
         parser.add_argument("--kp", help='Proportional for thigh and calf.', type=float, default=40.0)
         parser.add_argument("--kp_policy", help='Proportional for thigh and calf.', type=float, default=40.0)
+        parser.add_argument("--kp_policy_list", help='Proportional for all joints.', nargs='+', default=None)
         parser.add_argument("--kpa", help='Proportional for hip.', type=float, default=40.0)
         parser.add_argument("--kd_policy", help='Derivative for thigh and calf.', type=float, default=0.5)
+        parser.add_argument("--kd_policy_list", help='Derivative for all joints.', nargs='+', default=None)
         parser.add_argument("--kd", help='Derivative for thigh and calf.', type=float, default=0.5)
         parser.add_argument("--kda", help='Derivative for hip.', type=float, default=0.5)
         parser.add_argument("--dt", help="Control time step.", type=float, default=0.01)
@@ -266,8 +268,12 @@ class ControlFramework:
     def run(self):
         print(LINE)
         print("Running the policy....")
-        self.set_pd_gains(motor_kps=np.array([self.args.kp_policy] * 12),
-                          motor_kds=np.array([self.args.kd_policy] * 12))
+        if self.args.kp_policy_list is not None and self.args.kd_policy_list is not None:
+            self.set_pd_gains(motor_kps=np.array([self.args.kp_policy_list]),
+                              motor_kds=np.array([self.args.kd_policy_list]))
+        else:
+            self.set_pd_gains(motor_kps=np.array([self.args.kp_policy] * 12),
+                              motor_kds=np.array([self.args.kd_policy] * 12))
         if self.args.adaptive_controller:
             self.controller = AdaptiveController(self)
             self.controller.control()

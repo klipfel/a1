@@ -1,0 +1,231 @@
+seed: 100500
+record_video: no
+
+PPO:
+  entropy_coef: 0.01
+
+environment:
+  serverPort: 8080
+  render: False
+  policy:
+    learn_std: True
+  num_envs: 100
+  eval_every_n: 100
+  num_threads: 30
+  simulation_dt: 0.0025
+  control_dt: 0.025
+  gains:
+    P: 25.0
+    D: 0.2
+  max_time: 20.0
+  actionBoundHip: 0.15
+  actionBoundThigh: 0.4
+  actionBoundCalf: 0.4
+  robotManualChoice: 2
+  test:
+    stochastic: True
+  testNumber: 1
+  Curriculum:
+    z_scale_increment: 0.0
+    min_iteration: 500
+  curriculumThresholdDones: 0.002
+  terrainProperties:
+    choice: -1
+    ON: True
+    frequency: 10
+    zScale: 0.2
+    xSize: 30.0
+    ySize: 30.0
+    xSamples: 10
+    ySamples: 10
+    fractalOctaves: 2
+    fractalLacunarity: 2.0
+    fractalGain: 0.25
+  robots:
+    anymal:
+      Perturbation:
+        FextStd_horizontal_y: # 5 -> 10 N max
+          min: 0.0
+          max: 0.0
+        FextStd_horizontal_x:
+          min: -0.0
+          max: 0.0
+        FextStd_vertical: # 30 -> 60 N max
+          min: 0.0
+          max: 0.0
+        Duration: 200
+    anymal_c:
+      Perturbation:
+        FextStd_horizontal_y: # 5 -> 10 N max
+          min: 0.0
+          max: 0.0
+        FextStd_horizontal_x:
+          min: -0.0
+          max: 0.0
+        FextStd_vertical: # 30 -> 60 N max
+          min: 0.0
+          max: 0.0
+        Duration: 200
+    aliengo:
+      hip:
+        forward: 0.0
+        backward: 0.0
+      thigh:
+        forward: 0.5
+        backward: 0.7
+      calf:
+        forward: -1.0
+        backward: 0.0
+      Perturbation:
+        FextStd_horizontal_y: # 5 -> 10 N max
+          min: 0.0
+          max: 0.0
+        FextStd_horizontal_x:
+          min: -0.0
+          max: 0.0
+        FextStd_vertical: # 30 -> 60 N max
+          min: 0.0
+          max: 0.0
+        Duration: 200
+    a1:
+      hip:
+        forward: 0.0
+        backward: 0.0
+      thigh:
+        forward: 0.5
+        backward: 0.7
+      calf:
+        forward: -1.0
+        backward: 0.0
+      Perturbation:
+        FextStd_horizontal_y: # 5 -> 10 N max
+          min: 20.0
+          max: 20.0
+        FextStd_horizontal_x:
+          min: 20.0
+          max: 20.0
+        FextStd_vertical: # 30 -> 60 N max
+          min: 20.0
+          max: 20.0
+        Duration: 200
+    laikago:
+      hip:
+        forward: 0.0
+        backward: 0.0
+      thigh:
+        forward: 0.5
+        backward: 0.7
+      calf:
+        forward: -1.0
+        backward: 0.0
+      Perturbation:
+        FextStd_horizontal_y: # 5 -> 10 N max
+          min: 0.0
+          max: 0.0
+        FextStd_horizontal_x:
+          min: -0.0
+          max: 0.0
+        FextStd_vertical: # 30 -> 60 N max
+          min: 0.0
+          max: 0.0
+        Duration: 200
+  terminalRewardCoeff:
+    contact: -20.0
+    velocity: -20.0
+    angles: -20.0
+  maxSurvivalBonus: 20
+  rewardMaxFwVelocity: 0.375  # in m/s
+  maxVelocity: 1.5  # max velocity of the robot.
+  maxAbsRoll: 0.4
+  maxAbsPitch: 0.2
+  maxAbsYaw: 100
+  direction:
+      x: 1.0
+      y: 0.0
+      z: 0.0
+  filter:
+    mode: 1
+    None:
+      mode: -1
+    exp:
+      mode: 0
+      coeff: 0.6 # 0.9
+    window_average:
+      mode: 1
+      window_length: 5
+  reward:
+    forwardVel:
+      coeff: 0.0
+    commandedDir:
+      coeff: 0 #1.0 #0.4
+    driftVel:
+      coeff: 0.0  # opt -0.08
+    orientation:
+      coeff: 0 #-1
+      thres: 0.1
+    driftY:
+      coeff: 0 #-0.4
+    torque:
+      coeff: 0.0 #-1e-5
+    action:
+      coeff: 0.0
+    jointVelocities:
+      coeff: 0 #-1e-4
+    controlError:
+      coeff: 0.0
+    velocityTracking:
+      coeff: 0 #0.4
+    velocityTrackingPenalty:
+      coeff: 0 #-20 #-0.4
+    vy:
+      coeff: 0.0 #-10 #-1
+    vz:
+      coeff: 0 #-10 #-1
+    jointPositionTargetsSmoothing:
+      coeff: 0 #-10
+    wz:
+      coeff:  0.0 # -10
+    energy:
+      coeff: 0 #-0.04
+    survivalBonus:
+      coeff: 0 #1
+    r_walk:
+      coeff: 0
+    r_torso:
+      coeff: 1.0
+    r_up:
+      coeff: 0.1
+    r_feet:
+      coeff: 0.5
+  Randomization:
+    seedMode: 3
+    active: True # needs both flags to be set to true to activate any DR.
+    Mass:
+      active: False
+      std: 0.05
+    gains:
+      active: False
+      P:
+        max: 50.0
+        min: 25.0
+      D:
+        max: 1.0
+        min: 0.2
+    latency:
+      max: 5.0  # in ms.
+      active: False
+    Friction:
+      active: False
+      min: 0.1 #0.04
+      max: 2.0 # 2.0
+  Noise:
+    active: True
+    observation: 0.001
+    action: 0.001
+  delay_likelihood: 30
+  max_add_control_time_step: 0
+  min_add_control_time_step: 0
+
+architecture:
+  policy_net: [256, 256, 100, 24]
+  value_net: [400, 400, 300]
