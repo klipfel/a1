@@ -77,7 +77,8 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except KeyboardInterrupt:
+    except Exception as e:
+        print(e)
         cf.logger.log()
         if cf.args.adaptive_controller or cf.args.fixed_interpolation_controller:
             cf.controller.save_data()

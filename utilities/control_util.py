@@ -402,6 +402,9 @@ class AdaptiveController:
         self.interpolation_steps = []
         self.motor_torque_buffer = []
         self.contact_boolean_buffer = []
+        self.joint_position_buffer = []
+        self.base_position_buffer = []
+        self.base_velocity_buffer = []
 
     def control(self):
         # TODO add a sleep between each control command sent.
@@ -424,6 +427,8 @@ class AdaptiveController:
                 # Interpolation.
                 intermediary_joint_target = self.interpolate()
                 self.cf.apply_action(intermediary_joint_target)
+                # Sensor reading.
+                self.record_sensors()
                 self.policy_loop_timer.checkpoint("interpolation")
                 # Diagnosis.
                 # TODO measure the inter deltas, to get the while loop duration.
@@ -432,8 +437,6 @@ class AdaptiveController:
                 self.control_dt_loop.append(self.last_control_dt)
                 self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
                 self.time_left_before_new_target = self.max_policy_dt - self.last_policy_dt
-                # Sensor reading.
-                self.record_sensors()
             # Compute policy time
             self.policy_loop_timer.end("policy target end loop")
             self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
@@ -454,6 +457,9 @@ class AdaptiveController:
     def record_sensors(self):
         self.motor_torque_buffer.append(list(self.robot.GetTrueMotorTorques()))
         self.contact_boolean_buffer.append(self.robot.GetFootContacts())
+        self.joint_position_buffer.append(self.robot.GetTrueMotorAngles())
+        self.base_position_buffer.append(self.robot.GetBasePosition())
+        self.base_velocity_buffer.append(self.robot.GetBaseVelocity())
 
     def sleep(self):
         pass
@@ -469,6 +475,9 @@ class AdaptiveController:
         self.cf.logger.log_now("interpolation_steps", np.array(self.interpolation_step_buffer), fmt='%s', extension="csv")
         self.cf.logger.log_now("motor_torques", np.array(self.motor_torque_buffer), fmt='%1.5f', extension="csv")
         self.cf.logger.log_now("contact_states", np.array(self.contact_boolean_buffer), fmt='%1.5f', extension="csv")
+        self.cf.logger.log_now("motor_angles", np.array(self.joint_position_buffer), fmt='%1.5f', extension="csv")
+        self.cf.logger.log_now("base_position", np.array(self.base_position_buffer), fmt='%1.5f', extension="csv")
+        self.cf.logger.log_now("base_velocity", np.array(self.base_velocity_buffer), fmt='%1.5f', extension="csv")
 
     def interpolate(self):
         # TODO what current motor angles should I use? I opt for the previous policy target and not for the
@@ -535,6 +544,10 @@ class FixedInterpolationController(AdaptiveController):
             self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
             self.time_left_before_new_target = self.target_policy_dt - self.last_policy_dt
             self.target_interpolation_number = int(self.time_left_before_new_target//self.target_low_level_control_dt)+1
+            # In case the inference took too long (that can happen) then no interpolation.
+            if self.target_interpolation_number == 0:
+                logging.warning("Not enough time left in the policy control loop. Control in one step.")
+                self.target_interpolation_number = 1
             if self.last_policy_dt > 0.005:
                 logging.warning(f"[POLICY STEP {policy_step}] Inference takes longer than usual: {self.last_policy_dt} s.")
             while not self.reached_policy_target:
@@ -542,6 +555,8 @@ class FixedInterpolationController(AdaptiveController):
                 # Interpolation.
                 intermediary_joint_target = self.interpolate()
                 self.cf.apply_action(intermediary_joint_target)
+                # Sensor reading
+                self.record_sensors()
                 self.policy_loop_timer.checkpoint("interpolation")
                 # Diagnosis.
                 # TODO measure the inter deltas, to get the while loop duration.
@@ -554,8 +569,6 @@ class FixedInterpolationController(AdaptiveController):
                 self.time_left_before_new_target = self.target_policy_dt - self.last_policy_dt
                 self.interpolation_counter = min(self.interpolation_counter + 1 + self.skip_nsteps,
                                                  self.target_interpolation_number)
-                # Sensor reading.
-                self.record_sensors()
             # Compute policy time
             self.policy_loop_timer.end("policy target end loop")
             self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
