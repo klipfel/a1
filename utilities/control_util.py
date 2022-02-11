@@ -400,6 +400,8 @@ class AdaptiveController:
         self.current_blend_ratio = []  # for current policy joint target
         self.interpolation_step_buffer = []
         self.interpolation_steps = []
+        self.motor_torque_buffer = []
+        self.contact_boolean_buffer = []
 
     def control(self):
         # TODO add a sleep between each control command sent.
@@ -430,6 +432,8 @@ class AdaptiveController:
                 self.control_dt_loop.append(self.last_control_dt)
                 self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
                 self.time_left_before_new_target = self.max_policy_dt - self.last_policy_dt
+                # Sensor reading.
+                self.record_sensors()
             # Compute policy time
             self.policy_loop_timer.end("policy target end loop")
             self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
@@ -447,6 +451,10 @@ class AdaptiveController:
             self.interpolation_steps = []
         self.save_data()
 
+    def record_sensors(self):
+        self.motor_torque_buffer.append(list(self.robot.GetTrueMotorTorques()))
+        self.contact_boolean_buffer.append(self.robot.GetFootContacts())
+
     def sleep(self):
         pass
 
@@ -459,6 +467,8 @@ class AdaptiveController:
         self.cf.logger.log_now("deltas", np.array(self.policy_loop_timer.delta_history), fmt='%s', extension="csv")
         self.cf.logger.log_now("inter_deltas", np.array(self.policy_loop_timer.inter_delta_history), fmt='%s', extension="csv")
         self.cf.logger.log_now("interpolation_steps", np.array(self.interpolation_step_buffer), fmt='%s', extension="csv")
+        self.cf.logger.log_now("motor_torques", np.array(self.motor_torque_buffer), fmt='%1.5f', extension="csv")
+        self.cf.logger.log_now("contact_states", np.array(self.contact_boolean_buffer), fmt='%1.5f', extension="csv")
 
     def interpolate(self):
         # TODO what current motor angles should I use? I opt for the previous policy target and not for the
@@ -544,6 +554,8 @@ class FixedInterpolationController(AdaptiveController):
                 self.time_left_before_new_target = self.target_policy_dt - self.last_policy_dt
                 self.interpolation_counter = min(self.interpolation_counter + 1 + self.skip_nsteps,
                                                  self.target_interpolation_number)
+                # Sensor reading.
+                self.record_sensors()
             # Compute policy time
             self.policy_loop_timer.end("policy target end loop")
             self.last_policy_dt = self.policy_loop_timer.current_deltas[-1]
