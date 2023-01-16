@@ -5,11 +5,12 @@ import numpy as np
 
 class Config:
     # TO SET.
+    # TODO add wandb
     POLICY_DIR = "./weights/16rueoxi/raw/"
     POLICY_ITERATION = 8700
     INPUT_DIMS = 58
     OUTPUT_DIMS = 24
-    LOGDIR = "/tmp/logs"
+    LOGDIR = "/tmp/logs"  # where the data of the tests will be saved
     OBS_NORMALIZATION = True
     INI_JOINT_CONFIG = np.array([0.0, 0.5, -1.0]*4)
     LEG_JOINT_BOUND = [0.15, 0.4, 0.4]

@@ -7,10 +7,12 @@ import inspect
 import argparse
 from tqdm import tqdm
 import time
+import datetime
 # Pybullet.
 import pybullet  # pytype:disable=import-error
 import pybullet_data
 from pybullet_utils import bullet_client
+import wandb
 
 subprocess = subprocess.Popen("echo $HOME", shell=True, stdout=subprocess.PIPE)
 HOME = subprocess.stdout.read()
@@ -74,6 +76,16 @@ class ControlFramework:
         parser.add_argument("--fic_ll_dt", help="Target control time step between two repeated commands when calling the Step function.", type=float, default=0.003)
         parser.add_argument("-arp", "--action_repeat", help="Repeats the action applied on hardware.", type=int, default=1)
         parser.add_argument("-u", "--uri", help="URI of the proxy of the Policy object", type=str, default=None)
+        parser.add_argument("--wandb", help='If present as an arg the model will be downloaded from wandb directly.', action='store_true')
+        parser.add_argument('--run_path', help='wandb run path entity/project/run_id.', type=str, default='')
+        parser.add_argument('--update', help='update number of the model to test', type=int, default=None)
+
+        # Folder where the test data will be saved
+        date = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        self.test_data_folder = Config.LOGDIR + "/" + date
+        if not os.path.exists(self.test_data_folder):
+            os.makedirs(self.test_data_folder)
+
         args = parser.parse_args()
         logging.set_verbosity(logging.INFO)
         logging.info("WARNING: this code executes low-level controller on the robot.")
@@ -93,7 +105,7 @@ class ControlFramework:
         if args.uri is not None:
             self.policy = RemotePolicyAdapter(args.uri)
         else:
-            self.policy = Policy(args)
+            self.policy = Policy(args, folder=self.test_data_folder)
         # Creates a simulation using a gym environment.
         if is_sim_env:
             from motion_imitation.robots import a1
@@ -193,6 +205,7 @@ class ControlFramework:
         # Logger.
         if args.obs_normalization:
             self.logger = Logger(args=self.args,
+                                 folder=self.test_data_folder,
                                  obs_ref=self.obs_parser.obs_buffer,
                                  obsn_ref=self.obs_parser.obsn_buffer,
                                  action_policy_ref=self.action_bridge.action_policy_buffer,
@@ -203,6 +216,7 @@ class ControlFramework:
                                  )
         else:
             self.logger = Logger(args=self.args,
+                                 folder=self.test_data_folder,
                                  obs_ref=self.obs_parser.obs_buffer,
                                  action_policy_ref=self.action_bridge.action_policy_buffer,
                                  action_ref=self.action_bridge.action_buffer,
@@ -680,9 +694,10 @@ class RobotModel:
 
 class Policy:
 
-    def __init__(self, args, stochastic_test=False):
+    def __init__(self, args, stochastic_test=False, folder=None):
         self.stochastic_test = stochastic_test
         self.weight_path = args.weight
+        self.folder = folder
         from policy import ppo_module  # net architectures.
         # Inference done on the CPU.
         # TODO compare with GPU? in time
@@ -698,6 +713,21 @@ class Policy:
         # Actions
         self.action_ll = None
         self.action_np = None
+
+        if args.wandb:
+            # Use wandb to download the model
+            print(f"Using wandb to download the policy......")
+            api = wandb.Api()
+            run = api.run(args.run_path)
+            self.wandb_policy_folder = f"{self.folder}/{run.id}"
+            os.mkdir(self.wandb_policy_folder)
+            run.file("full_"+str(args.update)+".pt").download(root=self.wandb_policy_folder, replace=True)
+            run.file("mean"+str(args.update)+".csv").download(root=self.wandb_policy_folder, replace=True)
+            run.file("var"+str(args.update)+".csv").download(root=self.wandb_policy_folder, replace=True)
+            weight_path = self.folder + "/full_"+str(args.update)+".pt"
+            iteration_number = weight_path.rsplit('/', 1)[1].split('_', 1)[1].rsplit('.', 1)[0]
+            weight_dir = weight_path.rsplit('/', 1)[0] + '/'
+            # TODO read the policy that you will use
 
     def inference(self, obs):
         # Inference mode context manager to remove grad computation, similar to no_grad.

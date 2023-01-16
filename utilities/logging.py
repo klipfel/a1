@@ -7,7 +7,7 @@ import datetime
 
 class Logger:
 
-    def __init__(self, args=None, obs_ref=None, obsn_ref=None, action_policy_ref=None,
+    def __init__(self, args=None, folder=None, obs_ref=None, obsn_ref=None, action_policy_ref=None,
                  action_ref=None, policy_dt_ref=None,
                  last_action_time_ref=None, last_state_time_ref=None):
         """
@@ -15,11 +15,7 @@ class Logger:
         Any mutable object (list, dict, arrays) that contains data you want to store.
         """
         self.data_to_log = {}
-        date = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        folder = Config.LOGDIR + "/" + date
         self.folder = folder
-        if not os.path.exists(self.folder):
-            os.makedirs(self.folder)
         self.args = args
         if obs_ref is not None:
             self.data_to_log["observations"] = obs_ref
