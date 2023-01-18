@@ -2,6 +2,7 @@ import numpy as np
 import copy
 from absl import logging
 import os
+import sys
 import subprocess
 import inspect
 import argparse
@@ -79,6 +80,7 @@ class ControlFramework:
         parser.add_argument("--wandb", help='If present as an arg the model will be downloaded from wandb directly.', action='store_true')
         parser.add_argument('--run_path', help='wandb run path entity/project/run_id.', type=str, default='')
         parser.add_argument('--update', help='update number of the model to test', type=int, default=None)
+        parser.add_argument('--obs_mode', help='update number of the model to test', type=int, default=1)
 
         # Folder where the test data will be saved
         date = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
@@ -873,6 +875,14 @@ class ObservationParser:
         if self.args.obs_normalization:
             self.load_scaling(policy_dir, policy_iteration)
 
+        # Construction of the observation function
+        # TODO implement the observation fucntion
+        if self.args.obs_mode==1:
+            pass
+        else:
+            print("No observation mode.")
+            sys.exit(1)
+
     def load_scaling(self, dir_name, iteration, count=1e5):
         mean_file_name = dir_name + "/mean" + str(iteration) + ".csv"
         var_file_name = dir_name + "/var" + str(iteration) + ".csv"
@@ -980,4 +990,16 @@ class ObservationParser:
     def print_obs_std(self):
         print(self.measurements_std_dict)
 
+
+class MotionImitationObservationParser(ObservationParser):
+    '''
+    Class for the observation of the motion imitation policy
+    '''
+    # TODO
+    def __init__(self, robot, args, clip_obs=10., policy_dir=Config.POLICY_DIR,
+                 policy_iteration=Config.POLICY_ITERATION):
+        super().__init__(robot, args, clip_obs, policy_dir, policy_iteration)
+
+    def observe(self):
+        pass
 
