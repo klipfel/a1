@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import copy
 from absl import logging
 import os
@@ -6,6 +7,7 @@ import sys
 import subprocess
 import inspect
 import argparse
+
 from tqdm import tqdm
 import time
 import datetime
@@ -26,8 +28,12 @@ from motion_imitation.robots import robot_config
 from utilities.config import Config
 from utilities.logging import Logger
 
+from motion_clips.motionClip import MotionClipParser
+
 import torch
 from torch.distributions import Normal
+import torch.nn as nn
+
 
 # Remote client
 import Pyro5.api
@@ -40,27 +46,39 @@ def error(x, y):
     np.linalg.norm(np.array(x-y))
 
 
+def save_single_data_to_csv( data, name, folder):
+    df = pd.DataFrame(data)
+    df.to_csv(f"{folder}/{name}.csv")
+
+
+def raisim_quat_to_pybullet(quat):
+    assert type(quat) is list
+    # [w,x,y,z] -> [x,y,z,w]
+    w = quat.pop(0)
+    return quat + w
+
 class ControlFramework:
 
     def __init__(self,):
         # TODO add argcomplete for autocompletion in terminal.
         # TODO Fix other boolean parameters have to use store_true or store_false.
+        # TODO use kwargs to automate a bit or make it more general
         parser = argparse.ArgumentParser()
         parser.add_argument("-v", "--visualize", action='store_true', help='Activates the rendering in sim mode when present.')
         # TODO rack in hardware mode.
-        parser.add_argument("-r", "--rack", help='rack boolean. If true the robot is considered to be on a rack. For now only in simulation', type=bool, default=True)
+        parser.add_argument("-r", "--rack", help='rack boolean. If true the robot is considered to be on a rack. For now only in simulation', action='store_true')
         parser.add_argument("-t", "--test_type", help='Type of the test: static.', type=str, default="static")
         parser.add_argument("-m", "--mode", help='sim or hdw', type=str, default="sim")
-        parser.add_argument("--kp", help='Proportional for thigh and calf.', type=float, default=40.0)
-        parser.add_argument("--kp_policy", help='Proportional for thigh and calf.', type=float, default=40.0)
+        parser.add_argument("--kp", help='Proportional for thigh and calf.', type=float, default=50.0)
+        parser.add_argument("--kp_policy", help='Proportional for thigh and calf.', type=float, default=50.0)
         parser.add_argument("--kp_policy_list", help='Proportional for all joints.', nargs='+', type=float, default=None)
-        parser.add_argument("--kpa", help='Proportional for hip.', type=float, default=40.0)
-        parser.add_argument("--kd_policy", help='Derivative for thigh and calf.', type=float, default=0.5)
+        parser.add_argument("--kpa", help='Proportional for hip.', type=float, default=50.0)
+        parser.add_argument("--kd_policy", help='Derivative for thigh and calf.', type=float, default=2.0)
         parser.add_argument("--kd_policy_list", help='Derivative for all joints.', nargs='+', type=float, default=None)
-        parser.add_argument("--kd", help='Derivative for thigh and calf.', type=float, default=0.5)
-        parser.add_argument("--kda", help='Derivative for hip.', type=float, default=0.5)
-        parser.add_argument("--dt", help="Control time step.", type=float, default=0.01)
-        parser.add_argument("--dt_policy", help="Control time step for the policy test.", type=float, default=0.005)
+        parser.add_argument("--kd", help='Derivative for thigh and calf.', type=float, default=2.0)
+        parser.add_argument("--kda", help='Derivative for hip.', type=float, default=2.0)
+        parser.add_argument("--dt", help="Control time step.", type=float, default=0.02)
+        parser.add_argument("--dt_policy", help="Control time step for the policy test.", type=float, default=0.001)
         parser.add_argument("--time_step", help="Control time step between two repeated commands when calling the Step function.", type=float, default=0.001)
         parser.add_argument("--max_policy_dt", help="Sets the maximum time in seconds between two sampling from the policy. Used in the adaptive controller.", type=float, default=0.020)
         parser.add_argument("--nsteps", help="Total control steps to reach joint position.", type=int, default=200)
@@ -80,6 +98,9 @@ class ControlFramework:
         parser.add_argument("--wandb", help='If present as an arg the model will be downloaded from wandb directly.', action='store_true')
         parser.add_argument('--run_path', help='wandb run path entity/project/run_id.', type=str, default='')
         parser.add_argument('--update', help='update number of the model to test', type=int, default=None)
+        parser.add_argument('--motion_clip_folder', help='path of the motion clip folder', type=str, default='')
+        parser.add_argument('--motion_clip_name', help='Name of the motion clip interpolation file.', type=str, default='')
+        parser.add_argument('--imitation_policy', help='Activates the imitation policy.', action='store_true')
         parser.add_argument('--obs_mode', help='update number of the model to test', type=int, default=1)
 
         # Folder where the test data will be saved
@@ -107,7 +128,11 @@ class ControlFramework:
         if args.uri is not None:
             self.policy = RemotePolicyAdapter(args.uri)
         else:
-            self.policy = Policy(args, folder=self.test_data_folder)
+            if args.imitation_policy:
+                self.policy = ImitationPolicy(args, folder=self.test_data_folder)
+            else:
+                self.policy = Policy(args, folder=self.test_data_folder)
+
         # Creates a simulation using a gym environment.
         if is_sim_env:
             from motion_imitation.robots import a1
@@ -138,7 +163,7 @@ class ControlFramework:
             robot = a1_robot.A1Robot(pybullet_client=p,
                                      action_repeat=args.action_repeat,
                                      time_step=args.time_step,
-                                     control_latency=0.002)
+                                     control_latency=0.002)  # TODO wtf?
             robot.motor_kps = np.array([KPA,KP,KP] * 4)
             robot.motor_kds = np.array([KDA,KD,KD] * 4)
             print("Robot Kps: ", robot.motor_kps)
@@ -172,6 +197,7 @@ class ControlFramework:
             TODO what is the equivalent on hardware?
             """
             robot = a1.A1(pybullet_client=p,
+                          on_rack=args.rack,
                           action_repeat=args.action_repeat,
                           time_step=simulation_time_step,  # time step of the simulation
                           control_latency=0.0,
@@ -194,12 +220,34 @@ class ControlFramework:
         self.is_sim_env = is_sim_env
         self.is_sim_gui = is_sim_gui
         self.is_hdw = is_hdw
-        self.policy_dir, self.policy_it = self.policy_info_from_dir_path()
-        self.obs_parser = ObservationParser(self.robot, self.args,
-                                            policy_dir=self.policy_dir,
-                                            policy_iteration=self.policy_it)
-        self.action_bridge = ActionBridge(self.robot)
-        self.ini_conf = Config.INI_JOINT_CONFIG
+        if args.imitation_policy:
+            self.motion_clip_parser = MotionClipParser(data_folder=self.test_data_folder)
+            self.obs_parser = MotionImitationObservationParser(self.robot, self.args, self.policy,
+                                                               motion_clip_parser=self.motion_clip_parser,
+                                                               data_folder=self.test_data_folder)
+            self.leg_bounds = {"hip": [-0.5, 0.5], "thigh": [-0.1, 1.5], "calf": [-2.1, -0.5]}
+            self.action_bridge = MotionImitationActionBridge(self.robot, leg_bounds=self.leg_bounds)
+            self.ini_conf = self.motion_clip_parser.motion_clip["Interp_Motion_Data"][0][-12:]
+            self.ini_base_state = self.motion_clip_parser.motion_clip["Interp_Motion_Data"][0][:7]
+            self.ini_com = self.ini_base_state[:3]
+            self.ini_orn = self.ini_base_state[3:]
+            # Sets the initial state of the robot to be the initial motion clip state.
+            # TODO on hdw you will need to either randomize the init state more or just change obs?
+            if not is_hdw:
+                a1.INIT_POSITION = self.ini_base_state[:3]
+                a1.INIT_ORIENTATION = self.ini_base_state[3:]
+                a1.INIT_MOTOR_ANGLES = self.ini_conf
+                print(f"init position : {a1.INIT_POSITION}, init orientation : {a1.INIT_ORIENTATION}")
+                # self.robot.Reset(reload_urdf=False)
+                pybullet.resetBasePositionAndOrientation(self.robot.quadruped, self.ini_com, self.ini_orn)
+                print(f"Initial state to track in the reference: {self.ini_conf}......")
+        else:
+            self.policy_dir, self.policy_it = self.policy_info_from_dir_path()
+            self.obs_parser = ObservationParser(self.robot, self.args,
+                                                policy_dir=self.policy_dir,
+                                                policy_iteration=self.policy_it)
+            self.action_bridge = ActionBridge(self.robot)
+            self.ini_conf = Config.INI_JOINT_CONFIG
         # Buffers.
         self.policy_dt_buffer = []
         self.last_action_time_buffer = []
@@ -226,6 +274,17 @@ class ControlFramework:
                                  last_action_time_ref=self.last_action_time_buffer,
                                  last_state_time_ref=self.last_state_time_buffer
                                  )
+        # p.resetBasePositionAndOrientation(self.robot.ObjectId(), self.ini_base_state[:3], self.ini_base_state[3:])
+
+    def reset(self):
+        '''
+        Resets the robot to its initial state.
+        Be carefulto not use it on hdw
+        :return:
+        '''
+        if not self.is_hdw:
+            self.robot.Reset(reload_urdf=False)
+            # self.robot.quadruped
 
     def policy_info_from_dir_path(self):
         components = self.args.weight.split('/')
@@ -296,6 +355,12 @@ class ControlFramework:
         elif self.args.fixed_interpolation_controller:
             self.controller = FixedInterpolationController(self)
             print(self.controller)
+            self.controller.control()
+        elif self.args.imitation_policy:
+            print("Motion imitation policy control mode. The policy will start tracking the motion .... please press enter..."
+                  "to proceed")
+            input()
+            self.controller = MotionImitationSimpleController(self)
             self.controller.control()
         else:
             for _ in tqdm(range(self.args.nsteps)):
@@ -638,6 +703,75 @@ class FixedInterpolationController(AdaptiveController):
                 time.sleep(self.target_low_level_control_dt - time_in_step)
 
 
+class MotionImitationSimpleController:
+
+    def __init__(self, cf):
+        self.cf = cf
+        self.frame_target = 0 # frame target in the motion clip
+        self.control_dt = 0.02
+        self.sim_dt = 0.001
+        self.num_frames = self.cf.motion_clip_parser.motion_clip_sim_frames
+        self.frames_not_controlled = int(self.control_dt/self.sim_dt)
+        self.data = {"obs": [],
+                     "action_np": [],
+                     "action_robot": [],
+                     }
+        self.data_folder = cf.test_data_folder
+
+    def match_initial_state(self):
+        '''
+        Matches initial state in simulation.
+        :return:
+        '''
+        print(LINE)
+        print(f"Matching initial robot state of the robot to:\n")
+        # self.cf.reset()
+        pybullet.resetBasePositionAndOrientation(self.cf.robot.quadruped,
+                                                 self.cf.ini_com,
+                                                 self.cf.ini_orn
+                                                 )
+        print(f"CoM: {self.cf.robot.GetBasePosition()}/\n Orn: {self.cf.robot.GetTrueBaseOrientation()}"
+              f"\n jp: {self.cf.robot.GetTrueMotorAngles()}")
+        print(LINE)
+
+    def control(self):
+        # self.match_initial_state()
+        for frame in range(0, self.num_frames, self.frames_not_controlled):  #start, stop, step
+            # print(f"{frame}")
+            # TODO add a control for every sim step and not just control step
+            # Action inference.
+            self.cf.robot.ReceiveObservation()
+            obs = self.cf.obs_parser.observe(target_frame=frame)
+            action_np = self.cf.policy.inference(obs, std=[0.1,0.3,0.3]*4)
+            action_robot = self.cf.action_bridge.adapt(action_np)
+            current_motor_angle = np.array(self.cf.robot.GetTrueMotorAngles())
+            for k in range(20):
+                blend_ratio = np.minimum(k / (20-1), 1)
+                intermediary_joint_target = (1 - blend_ratio) * current_motor_angle + blend_ratio * action_robot
+                self.cf.apply_action(intermediary_joint_target.flatten())
+                time.sleep(self.sim_dt)
+            self.frame_target += self.frames_not_controlled
+            self.frame_target = self.frame_target % self.num_frames
+            # Save data
+            self.save_data(obs, action_np, action_robot)
+        self.write_data_to_csv()
+
+    def save_data(self, obs, action_np, action_robot):
+        self.data["obs"].append(list(obs.flatten()))
+        self.data["action_np"].append(list(action_np.flatten()))
+        self.data["action_robot"].append(list(action_robot.flatten()))
+
+    def write_data_to_csv(self):
+        folder = f"{self.data_folder}/imitation_controller"
+        os.makedirs(folder)
+        for data_name in self.data.keys():
+            save_single_data_to_csv(np.array(self.data[data_name]), data_name, folder)
+
+    # def match_initial_reference_state(self, pybullet_client):
+    #     # todo BUT NOT ESSENTIAL
+    #     pybullet_client.resetBasePositionAndOrientation(self.cf.robot, self.cf.ini_base_state[:3], self.cf.ini_base_state[3:])
+
+
 class Timer:
 
     def __init__(self):
@@ -716,24 +850,10 @@ class Policy:
         self.action_ll = None
         self.action_np = None
 
-        if args.wandb:
-            # Use wandb to download the model
-            print(f"Using wandb to download the policy......")
-            api = wandb.Api()
-            run = api.run(args.run_path)
-            self.wandb_policy_folder = f"{self.folder}/{run.id}"
-            os.mkdir(self.wandb_policy_folder)
-            run.file("full_"+str(args.update)+".pt").download(root=self.wandb_policy_folder, replace=True)
-            run.file("mean"+str(args.update)+".csv").download(root=self.wandb_policy_folder, replace=True)
-            run.file("var"+str(args.update)+".csv").download(root=self.wandb_policy_folder, replace=True)
-            weight_path = self.folder + "/full_"+str(args.update)+".pt"
-            iteration_number = weight_path.rsplit('/', 1)[1].split('_', 1)[1].rsplit('.', 1)[0]
-            weight_dir = weight_path.rsplit('/', 1)[0] + '/'
-            # TODO read the policy that you will use
-
     def inference(self, obs):
         # Inference mode context manager to remove grad computation, similar to no_grad.
         # No need of the gradient for inference.
+        # TODO why am I never multiplying by the std?
         with torch.inference_mode():
             action_ll = self.loaded_graph.forward(torch.from_numpy(obs).cpu())
             mean = action_ll[:, self.act_dim//2:]
@@ -747,6 +867,56 @@ class Policy:
                 action_np = action_ll.cpu().numpy()
             self.action_ll = action_ll
             self.action_np = action_np
+        return action_np
+
+
+class ImitationPolicy(Policy):
+
+    # TODO download the config file of the training so you can set hyperparameters based on that
+    def __init__(self, args, folder=None):
+        self.folder = folder
+        if args.wandb:
+            # Use wandb to download the model
+            print(f"Using wandb to download the policy......")
+            api = wandb.Api()
+            run = api.run(args.run_path)
+            self.wandb_policy_folder = f"{self.folder}/{run.id}"
+            self.update = args.update
+            os.makedirs(self.wandb_policy_folder)
+            run.file("full_"+str(args.update)+".pt").download(root=self.wandb_policy_folder, replace=True)
+            run.file("mean"+str(args.update)+".csv").download(root=self.wandb_policy_folder, replace=True)
+            run.file("var"+str(args.update)+".csv").download(root=self.wandb_policy_folder, replace=True)
+            self.weight_path = self.wandb_policy_folder + "/full_"+str(args.update)+".pt"
+            iteration_number = self.weight_path.rsplit('/', 1)[1].split('_', 1)[1].rsplit('.', 1)[0]
+            weight_dir = self.weight_path.rsplit('/', 1)[0] + '/'
+            # TODO read the policy that you will use
+        else:
+            print("Wandb is required for now.")
+        from policy import raisim_module  # net architectures.
+        # Inference done on the CPU.
+        # TODO compare with GPU? in time
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print("\nTorch device: ", self.device)
+        # calculate i/o dimensions of the policy net.
+        self.ob_dim = 342
+        self.act_dim = 12
+        self.architecture = [256, 256]
+        # Load policy net.
+        self.loaded_graph = raisim_module.MLP(self.architecture, nn.LeakyReLU, self.ob_dim, self.act_dim)
+        self.loaded_graph.load_state_dict(torch.load(self.weight_path, map_location=self.device)["actor_architecture_state_dict"])
+        print(self.loaded_graph)
+        # Actions
+        self.action_ll = None
+        self.action_np = None
+
+    def inference(self, obs, std):
+        with torch.inference_mode():
+            action_ll = self.loaded_graph.forward(torch.from_numpy(obs).cpu())
+            action_np = action_ll.cpu().numpy()
+            self.action_ll = action_ll
+            self.action_np = action_np
+        action_np = action_np * np.array(std)
         return action_np
 
 
@@ -789,6 +959,7 @@ class ActionBridge:
         return action
 
     def clip(self, action):
+        # TODO change the clipping for the imitation policy.
         # for j, aj in enumerate(list(action.flatten())):
         action[:, Config.HIP_INDEX] = np.array([np.clip(action[:, Config.HIP_INDEX].flatten(),
                                                         -self.leg_bounds[0], self.leg_bounds[0])])
@@ -803,6 +974,42 @@ class ActionBridge:
             action += sum(self.action_buffer[-Config.FILTER_WINDOW_LENGTH+1:])
             action /= Config.FILTER_WINDOW_LENGTH
 
+
+class MotionImitationActionBridge(ActionBridge):
+
+    def __init__(self, robot, leg_bounds):
+        super().__init__(robot, leg_bounds)
+        print(f"Leg bounds : {leg_bounds}")
+
+    def adapt(self, action_policy):
+        self.action_policy_buffer.append(copy.deepcopy(action_policy).flatten())
+        action = copy.deepcopy(action_policy)
+        action = self.add_mean(action)
+        action = self.clip(action)
+        action = self.filter(action)
+        action = self.clip(action)
+        self.action_buffer.append(copy.deepcopy(action).flatten())
+        return action
+
+    def clip(self, action):
+        action[:, Config.HIP_INDEX] = np.array([np.clip(action[:, Config.HIP_INDEX].flatten(),
+                                                        self.leg_bounds["hip"][0], self.leg_bounds["hip"][1])])
+        action[:, Config.THIGH_INDEX] = np.array([np.clip(action[:, Config.THIGH_INDEX].flatten(),
+                                                        self.leg_bounds["thigh"][0], self.leg_bounds["thigh"][1])])
+        action[:, Config.CALF_INDEX] = np.array([np.clip(action[:, Config.CALF_INDEX].flatten(),
+                                                        self.leg_bounds["calf"][0], self.leg_bounds["calf"][1])])
+        return action
+
+    def add_mean(self, action):
+        mean = [-0.01, 0.75,-1.5,0.01, 0.75,-1.5,-0.01, 0.75,-1.5, 0.01, 0.75, -1.5]
+        return action + np.array(mean)
+
+    def filter(self, action):
+        # TODO do an average filtering as soon as there are more than 2 action and then use a window of 5.
+        if len(self.action_buffer) >= Config.FILTER_WINDOW_LENGTH:
+            action += sum(self.action_buffer[-Config.FILTER_WINDOW_LENGTH+1:])
+            action /= Config.FILTER_WINDOW_LENGTH
+        return action
 
 class RunningMeanStd(object):
     def __init__(self, epsilon=1e-4, shape=()):
@@ -884,12 +1091,14 @@ class ObservationParser:
             sys.exit(1)
 
     def load_scaling(self, dir_name, iteration, count=1e5):
+        print(f"Observation normalization activated .... loading scaling var and mean from {dir_name}")
         mean_file_name = dir_name + "/mean" + str(iteration) + ".csv"
         var_file_name = dir_name + "/var" + str(iteration) + ".csv"
         self.obs_rms.count = count
         # TODO choose from another normalization data. The csv file contains normalization data for all environment.
         # TODO check if the normalization data for other env are the same. I chose the first env for now.
         # TODO these data should be the same after enough training. Is there a way to merge them?
+        # TODO you could have this file genrated from real data
         self.obs_rms.mean = np.loadtxt(mean_file_name, dtype=np.float32, max_rows=1)
         self.obs_rms.var = np.loadtxt(var_file_name, dtype=np.float32, max_rows=1)
 
@@ -996,10 +1205,79 @@ class MotionImitationObservationParser(ObservationParser):
     Class for the observation of the motion imitation policy
     '''
     # TODO
-    def __init__(self, robot, args, clip_obs=10., policy_dir=Config.POLICY_DIR,
-                 policy_iteration=Config.POLICY_ITERATION):
-        super().__init__(robot, args, clip_obs, policy_dir, policy_iteration)
+    def __init__(self, robot, args, policy, motion_clip_parser, data_folder=None, clip_obs=10.):
+        super().__init__(robot, args, clip_obs, policy_dir=policy.wandb_policy_folder,
+                         policy_iteration=policy.update)
+        self.logdir = data_folder
+        self.obs_rms = RunningMeanStd(shape=[1, policy.ob_dim])
+        self.data_folder = data_folder
+        self.motion_clip_parser = motion_clip_parser
+        self.args=args
+        self.motion_clip_folder =args.motion_clip_folder
+        self.motion_clip_name = args.motion_clip_name
+        self.get_motion_clip_data()
 
-    def observe(self):
-        pass
+    def get_motion_clip_data(self):
+        self.motion_clip_parser.get_single_motion_clip(
+            folder=self.motion_clip_folder,
+            interp_file_name=self.motion_clip_name
+        )
 
+    def observe(self, target_frame=0):
+        # Rel ino
+        # Remove rel info
+        rel_info = np.zeros((1, 36*3))
+        # Gets the robot data
+        self.get_robot_data()
+        # Gets the reference data
+        self.get_reference_data(target_frame=target_frame,
+                                obs_window=[-1000,-500,-200,-20,20,200,500,1000])
+        # Constitutes observations
+        self.current_obs = np.concatenate((rel_info,
+                                           self.robot_data,
+                                           self.reference_data),
+                                           axis=None)
+        # float32 for pytorch.
+        self.obs = np.array([list(self.current_obs)], dtype=np.float32)
+        # Put observations array in one row for policy.
+        np.reshape(self.obs, (1, -1))
+        # Store obs.
+        self.obs_buffer.append(self.obs.flatten())  # flatten for logging.
+        # Obs normalization.
+        if self.args.obs_normalization:
+            self.obsn = self.normalize(copy.deepcopy(self.obs))
+            self.obsn_buffer.append(self.obsn.flatten())  # flatten for logging.
+            return self.obsn
+        return self.obs
+
+    def get_robot_data(self):
+        self.motor_angles = self.robot.GetTrueMotorAngles()  # in [-\pi;+\pi]
+        self.motor_angle_rates = self.robot.GetTrueMotorVelocities()
+        self.rpy = np.array(self.robot.GetTrueBaseRollPitchYaw())
+        self.rpy_rate = self.robot.GetTrueBaseRollPitchYawRate()
+        self.com = self.robot.GetBasePosition()
+        self.lin_vel = self.robot.GetBaseVelocity()
+        self.rotmat = np.array(pybullet.getMatrixFromQuaternion(pybullet.getQuaternionFromEuler(self.rpy)))
+        self.robot_data = np.concatenate((self.com,
+                                          self.motor_angles,
+                                          self.rotmat.flatten(),
+                                          self.lin_vel,
+                                          self.rpy_rate,
+                                          self.motor_angle_rates),
+                                          axis=None)
+
+    def get_reference_data(self, target_frame, obs_window
+                           ):
+        '''
+
+        :param current_frame: refers to the current time in the motion tracking
+        :param obs_window: list of the different frame wrt to the current frame
+        present in the observations.
+        :return:
+        '''
+        reference_data_in_obs = []
+        for frame in obs_window:
+            frame_to_get = (frame+target_frame) % self.motion_clip_parser.motion_clip_sim_frames
+            reference_data_in_obs.append(list(self.motion_clip_parser.reference_data_obs[frame_to_get]))
+        # self.reference_data = np.zeros((1, 24*8))
+        self.reference_data = np.array(reference_data_in_obs)

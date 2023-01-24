@@ -17,6 +17,6 @@ class Config:
     HIP_INDEX = range(0, 12, 3)
     THIGH_INDEX = range(1, 12, 3)
     CALF_INDEX = range(2, 12, 3)
-    FILTER_WINDOW_LENGTH = 5
+    FILTER_WINDOW_LENGTH = 2
     # COMPUTED.
     WEIGHT_PATH = "./weights/16rueoxi/raw/"+"full_" + str(POLICY_ITERATION) + ".pt"
