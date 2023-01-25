@@ -23,7 +23,7 @@ HOME = str(HOME)
 # Motion imitation wrapper
 if HOME.find('unitree')!=-1:  # adds the path to the local motion_imitation wrapper installation.
     os.sys.path.append("/home/unitree/arnaud/motion_imitation")
-from motion_imitation.robots import robot_config
+from motion_imitation.robots import robot_config, a1
 
 from utilities.config import Config
 from utilities.logging import Logger
@@ -240,7 +240,12 @@ class ControlFramework:
                 print(f"init position : {a1.INIT_POSITION}, init orientation : {a1.INIT_ORIENTATION}")
                 # self.robot.Reset(reload_urdf=False)
                 pybullet.resetBasePositionAndOrientation(self.robot.quadruped, self.ini_com, self.ini_orn)
+                # TODO implement a proper initialization
+                # pybullet.resetJointStatesMultiDof(self.robot.quadruped, self.ini_conf)
                 print(f"Initial state to track in the reference: {self.ini_conf}......")
+                # Builds a  reference model
+                self.robot_ref_model = self.build_ref_model(pybullet_client=p,
+                                     urdf_file=a1.URDF_FILENAME)
         else:
             self.policy_dir, self.policy_it = self.policy_info_from_dir_path()
             self.obs_parser = ObservationParser(self.robot, self.args,
@@ -275,6 +280,7 @@ class ControlFramework:
                                  last_state_time_ref=self.last_state_time_buffer
                                  )
         # p.resetBasePositionAndOrientation(self.robot.ObjectId(), self.ini_base_state[:3], self.ini_base_state[3:])
+        self.pybullet_client = p
 
     def reset(self):
         '''
@@ -445,6 +451,79 @@ class ControlFramework:
         """Returns the agent observations."""
         return self.obs_parser.observe()
 
+    def build_ref_model(self, pybullet_client, urdf_file):
+        """Constructs simulated model for playing back the reference motion.
+        Returns:
+          Handle to the simulated model for the reference motion.
+        Source :
+        https://github.com/erwincoumans/motion_imitation/blob/d0e7b963c5a301984352d25a3ee0820266fa4218/motion_imitation/envs/env_wrappers/imitation_task.py#L553
+        """
+        ref_col = [1, 1, 1, 0.5]
+        ref_model = pybullet_client.loadURDF(urdf_file, useFixedBase=True)
+        pybullet_client.changeDynamics(ref_model, -1, linearDamping=0, angularDamping=0)
+
+        pybullet_client.setCollisionFilterGroupMask(
+            ref_model, -1, collisionFilterGroup=0, collisionFilterMask=0)
+
+        pybullet_client.changeDynamics(
+            ref_model,
+            -1,
+            activationState=pybullet_client.ACTIVATION_STATE_SLEEP +
+            pybullet_client.ACTIVATION_STATE_ENABLE_SLEEPING +
+            pybullet_client.ACTIVATION_STATE_DISABLE_WAKEUP)
+
+        pybullet_client.changeVisualShape(ref_model, -1, rgbaColor=ref_col)
+
+        num_joints = pybullet_client.getNumJoints(ref_model)
+        num_joints_sim = pybullet_client.getNumJoints(self.robot.quadruped)
+        assert (
+            num_joints == num_joints_sim
+        ), "ref model must have the same number of joints as the simulated model."
+
+        for j in range(num_joints):
+            pybullet_client.setCollisionFilterGroupMask(
+              ref_model, j, collisionFilterGroup=0, collisionFilterMask=0)
+
+            pybullet_client.changeDynamics(
+              ref_model,
+              j,
+              activationState=pybullet_client.ACTIVATION_STATE_SLEEP +
+              pybullet_client.ACTIVATION_STATE_ENABLE_SLEEPING +
+              pybullet_client.ACTIVATION_STATE_DISABLE_WAKEUP)
+
+            pybullet_client.changeVisualShape(ref_model, j, rgbaColor=ref_col)
+
+        return ref_model
+
+    def set_state(self, pybullet_client, phys_model, position, orn, joint_positions):
+        """Set the state of a character to the given pose and velocity. here the joints are considered to have
+        only 1DOF.
+        Args:
+          phys_model: handle of the character
+          pose: pose to be applied to the character
+          vel: velocity to be applied to the character
+          Source:
+          https://github.com/erwincoumans/motion_imitation/blob/d0e7b963c5a301984352d25a3ee0820266fa4218/motion_imitation/envs/env_wrappers/imitation_task.py#L747
+        """
+        pybullet_client.resetBasePositionAndOrientation(phys_model, position, orn)
+        # pybullet_client.resetBaseVelocity(phys_model, root_vel, root_ang_vel)
+        joint_name_to_id = self.BuildJointNameToIdDict(phys_model, pybullet_client)
+        num_joints = len(a1.MOTOR_NAMES)
+        # assert (num_joints == len(joint_positions)), f"{num_joints} =/= {len(joint_positions)}"
+        for name, i in zip(a1.MOTOR_NAMES, range(len(a1.MOTOR_NAMES))):
+            pybullet_client.resetJointState(phys_model,
+                                            joint_name_to_id[name],
+                                            joint_positions[i],
+                                            targetVelocity=0)
+
+    def BuildJointNameToIdDict(self, phys_model, pybullet_client):
+        # TODO write a wrapper class for a1 and the reference so you can put all this information in.
+        num_joints = pybullet_client.getNumJoints(phys_model)
+        joint_name_to_id = {}
+        for i in range(num_joints):
+            joint_info = pybullet_client.getJointInfo(phys_model, i)
+            joint_name_to_id[joint_info[1].decode("UTF-8")] = joint_info[0]
+        return joint_name_to_id
 
 class AdaptiveController:
     # TODO timer class?
@@ -717,6 +796,9 @@ class MotionImitationSimpleController:
                      "action_robot": [],
                      }
         self.data_folder = cf.test_data_folder
+        self.ref_position = None
+        self.ref_orn = None
+        self.ref_jp = None
 
     def match_initial_state(self):
         '''
@@ -745,10 +827,11 @@ class MotionImitationSimpleController:
             action_np = self.cf.policy.inference(obs, std=[0.1,0.3,0.3]*4)
             action_robot = self.cf.action_bridge.adapt(action_np)
             current_motor_angle = np.array(self.cf.robot.GetTrueMotorAngles())
-            for k in range(20):
-                blend_ratio = np.minimum(k / (20-1), 1)
+            for k in range(self.frames_not_controlled):
+                blend_ratio = np.minimum(k / ( self.frames_not_controlled-1), 1)
                 intermediary_joint_target = (1 - blend_ratio) * current_motor_angle + blend_ratio * action_robot
                 self.cf.apply_action(intermediary_joint_target.flatten())
+                self.update_ref_model(frameIdx=frame+k)
                 time.sleep(self.sim_dt)
             self.frame_target += self.frames_not_controlled
             self.frame_target = self.frame_target % self.num_frames
@@ -770,6 +853,22 @@ class MotionImitationSimpleController:
     # def match_initial_reference_state(self, pybullet_client):
     #     # todo BUT NOT ESSENTIAL
     #     pybullet_client.resetBasePositionAndOrientation(self.cf.robot, self.cf.ini_base_state[:3], self.cf.ini_base_state[3:])
+
+    def get_frame_gc(self, frameIdx):
+        # gets gc in pybullet convention
+        gc = self.cf.motion_clip_parser.motion_clip["Interp_Motion_Data"][frameIdx]
+        self.ref_position = gc[:3]
+        self.ref_orn = gc[3:3+4]
+        self.ref_jp = gc[-12:]
+
+    def update_ref_model(self, frameIdx):
+        self.get_frame_gc(frameIdx)
+        ref_model = self.cf.robot_ref_model
+        self.cf.set_state(self.cf.pybullet_client,
+                          ref_model,
+                          self.ref_position,
+                          self.ref_orn,
+                          self.ref_jp)
 
 
 class Timer:
