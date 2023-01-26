@@ -28,7 +28,7 @@ from motion_imitation.robots import robot_config, a1
 from utilities.config import Config
 from utilities.logging import Logger
 
-from motion_clips.motionClip import MotionClipParser
+from motion_clips.motionClip import MotionClipParser, raisim_rotmat_to_quat
 
 import torch
 from torch.distributions import Normal
@@ -55,7 +55,7 @@ def raisim_quat_to_pybullet(quat):
     assert type(quat) is list
     # [w,x,y,z] -> [x,y,z,w]
     w = quat.pop(0)
-    return quat + w
+    return quat + [w]
 
 class ControlFramework:
 
@@ -102,6 +102,8 @@ class ControlFramework:
         parser.add_argument('--motion_clip_name', help='Name of the motion clip interpolation file.', type=str, default='')
         parser.add_argument('--imitation_policy', help='Activates the imitation policy.', action='store_true')
         parser.add_argument('--obs_mode', help='update number of the model to test', type=int, default=1)
+        parser.add_argument("--no_control", help='If flag is present the actions of the policy are inferred but the robot is not controlled, '
+                                                 'the actions are not applied..', action='store_true')
 
         # Folder where the test data will be saved
         date = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
@@ -440,12 +442,15 @@ class ControlFramework:
 
     def apply_action(self, action):
         # Applies commands.
-        if self.is_sim_env:
-            self.env.step(action)
-        elif self.is_hdw or self.is_sim_gui:
-            self.robot.Step(action, robot_config.MotorControlMode.POSITION)
+        if self.args.no_control:
+            print("Control is not activated.")
         else:
-            logging.error("ERROR: unsupported mode. Either sim or hdw.")
+            if self.is_sim_env:
+                self.env.step(action)
+            elif self.is_hdw or self.is_sim_gui:
+                self.robot.Step(action, robot_config.MotorControlMode.POSITION)
+            else:
+                logging.error("ERROR: unsupported mode. Either sim or hdw.")
 
     def observe(self):
         """Returns the agent observations."""
@@ -808,17 +813,27 @@ class MotionImitationSimpleController:
         print(LINE)
         print(f"Matching initial robot state of the robot to:\n")
         # self.cf.reset()
-        pybullet.resetBasePositionAndOrientation(self.cf.robot.quadruped,
-                                                 self.cf.ini_com,
-                                                 self.cf.ini_orn
-                                                 )
+        # pybullet.resetBasePositionAndOrientation(self.cf.robot.quadruped,
+        #                                          self.cf.ini_com,
+        #                                          self.cf.ini_orn
+        #                                          )
+        self.cf.set_state(self.cf.pybullet_client,
+                          self.cf.robot.quadruped,
+                          self.cf.ini_com,
+                          self.cf.ini_orn,
+                          self.cf.ini_conf)
+        self.cf.robot.ReceiveObservation() ## need to call receiveObs before any sensor reading
         print(f"CoM: {self.cf.robot.GetBasePosition()}/\n Orn: {self.cf.robot.GetTrueBaseOrientation()}"
               f"\n jp: {self.cf.robot.GetTrueMotorAngles()}")
+        print(f"Errors : CoM: {self.cf.ini_com-self.cf.robot.GetBasePosition()}/\n Orn: {self.cf.ini_orn-self.cf.robot.GetTrueBaseOrientation()}"
+              f"\n jp: {self.cf.ini_conf-self.cf.robot.GetTrueMotorAngles()}")
         print(LINE)
 
     def control(self):
-        # self.match_initial_state()
-        for frame in range(0, self.num_frames, self.frames_not_controlled):  #start, stop, step
+        self.match_initial_state()
+        input("TO PROCEED TO THE MOTION TRACKING......PRESS ENTER....")
+        for frame in range(20, self.num_frames, self.frames_not_controlled):  #start, stop, step
+            frame = 20
             # print(f"{frame}")
             # TODO add a control for every sim step and not just control step
             # Action inference.
@@ -827,11 +842,12 @@ class MotionImitationSimpleController:
             action_np = self.cf.policy.inference(obs, std=[0.1,0.3,0.3]*4)
             action_robot = self.cf.action_bridge.adapt(action_np)
             current_motor_angle = np.array(self.cf.robot.GetTrueMotorAngles())
-            for k in range(self.frames_not_controlled):
+            for k in range(self.frames_not_controlled):  # the policy is not controlling for these frames
+                # only for reference visualization and smoother control
                 blend_ratio = np.minimum(k / ( self.frames_not_controlled-1), 1)
                 intermediary_joint_target = (1 - blend_ratio) * current_motor_angle + blend_ratio * action_robot
                 self.cf.apply_action(intermediary_joint_target.flatten())
-                self.update_ref_model(frameIdx=frame+k)
+                self.update_ref_model(frameIdx=(frame+k)% self.num_frames)
                 time.sleep(self.sim_dt)
             self.frame_target += self.frames_not_controlled
             self.frame_target = self.frame_target % self.num_frames
@@ -854,15 +870,21 @@ class MotionImitationSimpleController:
     #     # todo BUT NOT ESSENTIAL
     #     pybullet_client.resetBasePositionAndOrientation(self.cf.robot, self.cf.ini_base_state[:3], self.cf.ini_base_state[3:])
 
-    def get_frame_gc(self, frameIdx):
+    def get_frame_gc(self, frameIdx, use_rotation_matrix=False):
         # gets gc in pybullet convention
         gc = self.cf.motion_clip_parser.motion_clip["Interp_Motion_Data"][frameIdx]
         self.ref_position = gc[:3]
-        self.ref_orn = gc[3:3+4]
+        if use_rotation_matrix:
+            # Retrive reconstructed rotmat from motion clip quaternion
+            rotmat = self.cf.motion_clip_parser.motion_clip_additional_data["Rotation_matrix"][frameIdx]
+            q = raisim_rotmat_to_quat(rotmat)
+            self.ref_orn = raisim_quat_to_pybullet(q)
+        else:
+            self.ref_orn = gc[3:3+4]
         self.ref_jp = gc[-12:]
 
     def update_ref_model(self, frameIdx):
-        self.get_frame_gc(frameIdx)
+        self.get_frame_gc(frameIdx, use_rotation_matrix=True)
         ref_model = self.cf.robot_ref_model
         self.cf.set_state(self.cf.pybullet_client,
                           ref_model,
@@ -1350,13 +1372,14 @@ class MotionImitationObservationParser(ObservationParser):
         return self.obs
 
     def get_robot_data(self):
+        self.robot.ReceiveObservation()
         self.motor_angles = self.robot.GetTrueMotorAngles()  # in [-\pi;+\pi]
         self.motor_angle_rates = self.robot.GetTrueMotorVelocities()
         self.rpy = np.array(self.robot.GetTrueBaseRollPitchYaw())
         self.rpy_rate = self.robot.GetTrueBaseRollPitchYawRate()
         self.com = self.robot.GetBasePosition()
         self.lin_vel = self.robot.GetBaseVelocity()
-        self.rotmat = np.array(pybullet.getMatrixFromQuaternion(pybullet.getQuaternionFromEuler(self.rpy)))
+        self.rotmat = np.array(pybullet.getMatrixFromQuaternion(pybullet.getQuaternionFromEuler(self.rpy))) #TODO to check
         self.robot_data = np.concatenate((self.com,
                                           self.motor_angles,
                                           self.rotmat.flatten(),

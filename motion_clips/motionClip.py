@@ -5,6 +5,9 @@ import math
 import os
 import datetime
 
+from torch.utils.data.datapipes.utils.decoder import mathandler
+
+
 def quat_to_rotation_matrix(quaternion):
     """Return homogeneous rotation matrix from quaternion.
         >>> M = quaternion_matrix([0.99810947, 0.06146124, 0, 0])
@@ -49,6 +52,36 @@ def raisim_quat_to_rotation_matrix(q):
     R[1, 2] = 2 * q[2] * q[3] - 2 * q[0] * q[1]
     R[2, 2] = q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3]
     return R
+
+
+def raisim_rotmat_to_quat(R):
+    q = [0, 0, 0, 0]
+    tr = R[0] + R[4] + R[8]
+    if tr > 0.0:
+        S = math.sqrt(tr + 1.0) * 2.0
+        q[0] = 0.25 * S
+        q[1] = (R[5] - R[7]) / S
+        q[2] = (R[6] - R[2]) / S
+        q[3] = (R[1] - R[3]) / S
+    elif (R[0] > R[4]) and (R[0] > R[8]):
+        S = math.sqrt(1.0 + R[0] - R[4] - R[8]) * 2.0
+        q[0] = (R[5] - R[7]) / S
+        q[1] = 0.25 * S
+        q[2] = (R[3] + R[1]) / S
+        q[3] = (R[6] + R[2]) / S
+    elif R[4] > R[8]:
+        S = math.sqrt(1.0 + R[4] - R[0] - R[8]) * 2.0
+        q[0] = (R[6] - R[2]) / S
+        q[1] = (R[3] + R[1]) / S
+        q[2] = 0.25 * S
+        q[3] = (R[7] + R[5]) / S
+    else:
+        S = math.sqrt(1.0 + R[8] - R[0] - R[4]) * 2.0
+        q[0] = (R[1] - R[3]) / S
+        q[1] = (R[6] + R[2]) / S
+        q[2] = (R[7] + R[5]) / S
+        q[3] = 0.25 * S
+    return q
 
 class MotionClipParser:
     '''
