@@ -86,7 +86,8 @@ class ControlFramework:
         parser.add_argument("--sp", help="Smoothing percentage.", type=float, default=2/3)
         parser.add_argument("--sjt", nargs="+", help="Single joint target specification for one leg.", type=float, default=None)
         parser.add_argument("-w", "--weight", help="pre-trained weight path", type=str, default=Config.WEIGHT_PATH)
-        parser.add_argument("-obsn", "--obs_normalization", help="Normalize or not observations based on the data accumulated in Raisim.", type=bool, default=Config.OBS_NORMALIZATION)
+        # parser.add_argument("-obsn", "--obs_normalization", help="Normalize or not observations based on the data accumulated in Raisim.", type=bool, default=Config.OBS_NORMALIZATION)
+        parser.add_argument("-obsn", "--obs_normalization", help="Normalize or not observations based on the data accumulated in Raisim.", action='store_true')
         parser.add_argument("-rh", "--run_hdw", action='store_true', help="Apply actions on hardware.")
         parser.add_argument("-ps", "--policy_synch_sleep", action='store_true', help="Synchronization of the policy control time step with sleep calls.")
         parser.add_argument("-ac", "--adaptive_controller", action='store_true', help="If present the flag enables to select the AdaptiveController class.")
@@ -833,7 +834,6 @@ class MotionImitationSimpleController:
         self.match_initial_state()
         input("TO PROCEED TO THE MOTION TRACKING......PRESS ENTER....")
         for frame in range(20, self.num_frames, self.frames_not_controlled):  #start, stop, step
-            frame = 20
             # print(f"{frame}")
             # TODO add a control for every sim step and not just control step
             # Action inference.
@@ -841,14 +841,18 @@ class MotionImitationSimpleController:
             obs = self.cf.obs_parser.observe(target_frame=frame)
             action_np = self.cf.policy.inference(obs, std=[0.1,0.3,0.3]*4)
             action_robot = self.cf.action_bridge.adapt(action_np)
-            current_motor_angle = np.array(self.cf.robot.GetTrueMotorAngles())
-            for k in range(self.frames_not_controlled):  # the policy is not controlling for these frames
+            # self.cf.robot.ReceiveObservation()
+            # current_motor_angle = np.array(self.cf.robot.GetTrueMotorAngles())
+            # for k in range(self.frames_not_controlled):  # the policy is not controlling for these frames
                 # only for reference visualization and smoother control
-                blend_ratio = np.minimum(k / ( self.frames_not_controlled-1), 1)
-                intermediary_joint_target = (1 - blend_ratio) * current_motor_angle + blend_ratio * action_robot
-                self.cf.apply_action(intermediary_joint_target.flatten())
-                self.update_ref_model(frameIdx=(frame+k)% self.num_frames)
-                time.sleep(self.sim_dt)
+                # blend_ratio = np.minimum(k / ( self.frames_not_controlled-1), 1)
+                # intermediary_joint_target = (1 - blend_ratio) * current_motor_angle + blend_ratio * action_robot
+                # self.cf.apply_action(intermediary_joint_target.flatten())
+                # self.update_ref_model(frameIdx=(frame+k)% self.num_frames)
+                # time.sleep(self.sim_dt)
+            self.cf.apply_action(action_robot.flatten())
+            self.update_ref_model(frameIdx=frame% self.num_frames)
+            time.sleep(self.control_dt)
             self.frame_target += self.frames_not_controlled
             self.frame_target = self.frame_target % self.num_frames
             # Save data
@@ -1033,11 +1037,13 @@ class ImitationPolicy(Policy):
 
     def inference(self, obs, std):
         with torch.inference_mode():
-            action_ll = self.loaded_graph.forward(torch.from_numpy(obs).cpu())
-            action_np = action_ll.cpu().numpy()
-            self.action_ll = action_ll
-            self.action_np = action_np
+            action_ll = self.loaded_graph.architecture(torch.from_numpy(obs).cpu())
+            action_np = action_ll.cpu().detach().numpy()
+            action_ll = np.array(action_ll, dtype=np.float64)
+            action_np = np.array(action_np, dtype=np.float64)
         action_np = action_np * np.array(std)
+        self.action_ll = action_ll
+        self.action_np = action_np
         return action_np
 
 
@@ -1114,11 +1120,14 @@ class MotionImitationActionBridge(ActionBridge):
 
     def clip(self, action):
         action[:, Config.HIP_INDEX] = np.array([np.clip(action[:, Config.HIP_INDEX].flatten(),
-                                                        self.leg_bounds["hip"][0], self.leg_bounds["hip"][1])])
+                                                        a_min=self.leg_bounds["hip"][0],
+                                                        a_max=self.leg_bounds["hip"][1])])
         action[:, Config.THIGH_INDEX] = np.array([np.clip(action[:, Config.THIGH_INDEX].flatten(),
-                                                        self.leg_bounds["thigh"][0], self.leg_bounds["thigh"][1])])
+                                                          a_min=self.leg_bounds["thigh"][0],
+                                                          a_max=self.leg_bounds["thigh"][1])])
         action[:, Config.CALF_INDEX] = np.array([np.clip(action[:, Config.CALF_INDEX].flatten(),
-                                                        self.leg_bounds["calf"][0], self.leg_bounds["calf"][1])])
+                                                         a_min=self.leg_bounds["calf"][0],
+                                                         a_max=self.leg_bounds["calf"][1])])
         return action
 
     def add_mean(self, action):
@@ -1127,7 +1136,7 @@ class MotionImitationActionBridge(ActionBridge):
 
     def filter(self, action):
         # TODO do an average filtering as soon as there are more than 2 action and then use a window of 5.
-        if len(self.action_buffer) >= Config.FILTER_WINDOW_LENGTH:
+        if len(self.action_buffer) >= Config.FILTER_WINDOW_LENGTH-1:
             action += sum(self.action_buffer[-Config.FILTER_WINDOW_LENGTH+1:])
             action /= Config.FILTER_WINDOW_LENGTH
         return action
@@ -1331,6 +1340,8 @@ class MotionImitationObservationParser(ObservationParser):
                          policy_iteration=policy.update)
         self.logdir = data_folder
         self.obs_rms = RunningMeanStd(shape=[1, policy.ob_dim])
+        if self.args.obs_normalization:
+            self.load_scaling(policy.wandb_policy_folder, policy.update)
         self.data_folder = data_folder
         self.motion_clip_parser = motion_clip_parser
         self.args=args
@@ -1343,6 +1354,30 @@ class MotionImitationObservationParser(ObservationParser):
             folder=self.motion_clip_folder,
             interp_file_name=self.motion_clip_name
         )
+
+    def load_scaling(self, dir_name, iteration, count=1e5):
+        print(f"Observation normalization activated .... loading scaling var and mean from {dir_name}")
+        mean_file_name = dir_name + "/mean" + str(iteration) + ".csv"
+        var_file_name = dir_name + "/var" + str(iteration) + ".csv"
+        self.obs_rms.count = count
+        # TODO choose from another normalization data. The csv file contains normalization data for all environment.
+        # TODO check if the normalization data for other env are the same. I chose the first env for now.
+        # TODO these data should be the same after enough training. Is there a way to merge them?
+        # TODO you could have this file genrated from real data
+        self.obs_rms.mean = np.loadtxt(mean_file_name, dtype=np.float32)
+        self.obs_rms.var = np.loadtxt(var_file_name, dtype=np.float32)
+        print(f"Loaded obs means:{self.obs_rms.mean}")
+        print(f"Loaded obs vars:{self.obs_rms.var}")
+
+    def normalize(self, obs):
+        """
+        TODO in the tester in Raisim they use the mean and var data from the training, but what do I with the robot?
+        TODO the mean and var data are not accurate for the hdw.
+        Note: this function has changed. The action clipping is not done anymore.
+        :return:
+        """
+        print(f"MEAN: {self.obs_rms.mean}/VAR:{self.obs_rms.var}")
+        return (obs - self.obs_rms.mean) / np.sqrt(self.obs_rms.var + 1e-8)
 
     def observe(self, target_frame=0):
         # Rel ino
@@ -1359,7 +1394,7 @@ class MotionImitationObservationParser(ObservationParser):
                                            self.reference_data),
                                            axis=None)
         # float32 for pytorch.
-        self.obs = np.array([list(self.current_obs)], dtype=np.float32)
+        self.obs = np.array([list(self.current_obs)], dtype=np.float64)
         # Put observations array in one row for policy.
         np.reshape(self.obs, (1, -1))
         # Store obs.
@@ -1368,7 +1403,9 @@ class MotionImitationObservationParser(ObservationParser):
         if self.args.obs_normalization:
             self.obsn = self.normalize(copy.deepcopy(self.obs))
             self.obsn_buffer.append(self.obsn.flatten())  # flatten for logging.
+            self.obsn = np.array(self.obsn, dtype=np.float32)
             return self.obsn
+        self.obs = np.array([list(self.obs)], dtype=np.float32)
         return self.obs
 
     def get_robot_data(self):
