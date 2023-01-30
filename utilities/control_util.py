@@ -1213,12 +1213,12 @@ class ObservationParser:
             self.load_scaling(policy_dir, policy_iteration)
 
         # Construction of the observation function
-        # TODO implement the observation fucntion
-        if self.args.obs_mode==1:
-            pass
-        else:
-            print("No observation mode.")
-            sys.exit(1)
+        # # TODO implement the observation fucntion
+        # if self.args.obs_mode==1:
+        #     pass
+        # else:
+        #     print("No observation mode.")
+        #     sys.exit(1)
 
     def load_scaling(self, dir_name, iteration, count=1e5):
         print(f"Observation normalization activated .... loading scaling var and mean from {dir_name}")
@@ -1376,7 +1376,7 @@ class MotionImitationObservationParser(ObservationParser):
         Note: this function has changed. The action clipping is not done anymore.
         :return:
         """
-        print(f"MEAN: {self.obs_rms.mean}/VAR:{self.obs_rms.var}")
+        # print(f"MEAN: {self.obs_rms.mean}/VAR:{self.obs_rms.var}")
         return (obs - self.obs_rms.mean) / np.sqrt(self.obs_rms.var + 1e-8)
 
     def observe(self, target_frame=0):
@@ -1440,3 +1440,19 @@ class MotionImitationObservationParser(ObservationParser):
             reference_data_in_obs.append(list(self.motion_clip_parser.reference_data_obs[frame_to_get]))
         # self.reference_data = np.zeros((1, 24*8))
         self.reference_data = np.array(reference_data_in_obs)
+
+
+class HdwMotionImitationObservationParser(MotionImitationObservationParser):
+    '''
+    Adaptation of the observation parser for the imitation policy on the hdw. Using the
+    remote server.
+    '''
+    def __init__(self, robot, args, policy, motion_clip_parser, data_folder):
+        super().__init__(robot, args, policy, motion_clip_parser, data_folder)
+        self.remote_robot_data = None
+        self.robot_data = None
+
+    def get_robot_data(self):
+        sensor_data_list = self.robot.get_sensor_data()
+        sensor_data_np = np.array(sensor_data_list, dtype=np.float32)
+        self.robot_data = sensor_data_np
