@@ -1,3 +1,4 @@
+import os, sys
 import Pyro5.server
 import Pyro5.api
 import logging
@@ -26,6 +27,9 @@ parser.add_argument("--kd", help='Derivative gain.', type=float, default=2.0)
 parser.add_argument("--ip_host", help='Host ip address, where the Pyro deamon will be called and where the name server'
                                  'should be instanciated.', type=str, default="192.168.123.24")
 parser.add_argument("-v", "--visualize", action='store_true', help='Activates the rendering in sim mode when present.')
+parser.add_argument("-nc", "--no_control", action='store_true', help='If flag is present the control command is not'
+                                                                     'not sent to the Low-Level DC motors.')
+parser.add_argument("-hdw", "--hardware_mode", action='store_true', help='Hardware mode for control on the robot.')
 parser.add_argument("-arp", "--action_repeat", help="Repeats the action applied on hardware.", type=int, default=1)
 args = parser.parse_args()
 
@@ -33,39 +37,58 @@ args = parser.parse_args()
 class RobotA1:
 
     def __init__(self):
-        if args.visualize:
-            p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
-            p.configureDebugVisualizer(p.COV_ENABLE_GUI,0)
-            p.configureDebugVisualizer(p.COV_ENABLE_RENDERING,0)
-        else:
+        if args.hardware_mode:
+            os.sys.path.append("/home/unitree/arnaud/motion_imitation")
+            from motion_imitation.robots import a1_robot  # imports the robot interface in the case where the code is
+            # run on hardware.
+            # No environment is needed for hardware tests.
             p = bullet_client.BulletClient(connection_mode=pybullet.DIRECT)
-        # p.setAdditionalSearchPath(pybullet_data.getDataPath())
-        p.setAdditionalSearchPath(pybullet_data.getDataPath())
-        num_bullet_solver_iterations = 30
-        p.setPhysicsEngineParameter(numSolverIterations=num_bullet_solver_iterations)
-        p.setPhysicsEngineParameter(enableConeFriction=0)
-        p.setPhysicsEngineParameter(numSolverIterations=30)
-        simulation_time_step = 0.001
-        p.setTimeStep(simulation_time_step)
-        p.setGravity(0, 0, -9.8)
-        p.setPhysicsEngineParameter(enableConeFriction=0)
-        p.setAdditionalSearchPath(pybullet_data.getDataPath())
-        p.loadURDF("plane.urdf")
-        robot = a1.A1(pybullet_client=p,
-                      on_rack=False,
-                      action_repeat=args.action_repeat,
-                      time_step=simulation_time_step,  # time step of the simulation
-                      control_latency=0.0,
-                      enable_action_interpolation=True,
-                      enable_action_filter=False)
-        motor_kps = np.array([args.kp] * 12)
-        motor_kds = np.array([args.kd] * 12)
-        robot.SetMotorGains(motor_kps, motor_kds)
-        gains = robot.GetMotorGains()
-        print("Robot Kps:", gains[0])
-        print("Robot Kds:", gains[1])
-        if args.visualize:
-            p.configureDebugVisualizer(p.COV_ENABLE_RENDERING,1)
+            p.setAdditionalSearchPath(pybullet_data.getDataPath())
+            # Hardware class for the robot. (wrapper)
+            robot = a1_robot.A1Robot(pybullet_client=p,
+                                     action_repeat=args.action_repeat,
+                                     time_step=0.001,
+                                     control_latency=0.0)
+            motor_kps = np.array([args.kp] * 12)
+            motor_kds = np.array([args.kd] * 12)
+            robot.SetMotorGains(motor_kps, motor_kds)
+            gains = robot.GetMotorGains()
+            print("Robot Kps: ", robot.motor_kps)
+            print("Robot Kds: ", robot.motor_kds)
+        else:
+            if args.visualize:
+                p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
+                p.configureDebugVisualizer(p.COV_ENABLE_GUI,0)
+                p.configureDebugVisualizer(p.COV_ENABLE_RENDERING,0)
+            else:
+                p = bullet_client.BulletClient(connection_mode=pybullet.DIRECT)
+            # p.setAdditionalSearchPath(pybullet_data.getDataPath())
+            p.setAdditionalSearchPath(pybullet_data.getDataPath())
+            num_bullet_solver_iterations = 30
+            p.setPhysicsEngineParameter(numSolverIterations=num_bullet_solver_iterations)
+            p.setPhysicsEngineParameter(enableConeFriction=0)
+            p.setPhysicsEngineParameter(numSolverIterations=30)
+            simulation_time_step = 0.001
+            p.setTimeStep(simulation_time_step)
+            p.setGravity(0, 0, -9.8)
+            p.setPhysicsEngineParameter(enableConeFriction=0)
+            p.setAdditionalSearchPath(pybullet_data.getDataPath())
+            p.loadURDF("plane.urdf")
+            robot = a1.A1(pybullet_client=p,
+                          on_rack=False,
+                          action_repeat=args.action_repeat,
+                          time_step=simulation_time_step,  # time step of the simulation
+                          control_latency=0.0,
+                          enable_action_interpolation=True,
+                          enable_action_filter=False)
+            motor_kps = np.array([args.kp] * 12)
+            motor_kds = np.array([args.kd] * 12)
+            robot.SetMotorGains(motor_kps, motor_kds)
+            gains = robot.GetMotorGains()
+            print("Robot Kps:", gains[0])
+            print("Robot Kds:", gains[1])
+            if args.visualize:
+                p.configureDebugVisualizer(p.COV_ENABLE_RENDERING,1)
         # Class attribute
         self.robot = robot
         self.args = args
@@ -102,7 +125,10 @@ class RobotA1:
     def get_action(self, action):      # exposed as 'proxy.attr' writable
         # TODO ADD A FLAG TO APPLY IT OR NOT
         self.action = np.array(action)
-        self.apply_action()
+        if not self.args.no_control:
+            self.apply_action()
+        else:
+            print(f"NO CONTROL MODE.")
 
     def apply_action(self):
         self.robot.Step(self.action.flatten(), robot_config.MotorControlMode.POSITION)
