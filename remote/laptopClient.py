@@ -21,7 +21,7 @@ from utilities.motion_imitation_config import MotionImitationConfig
 def create_tmp_data_folder():
     # Folder where the test data will be saved
     date = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    test_data_folder = "/tmp/logs" + "/" + date
+    test_data_folder = "data" + "/" + date
     if not os.path.exists(test_data_folder):
         os.makedirs(test_data_folder)
     return test_data_folder
