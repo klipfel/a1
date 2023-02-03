@@ -5,7 +5,6 @@ import logging
 import numpy
 import time
 import argparse
-from motion_imitation.robots import a1, robot_config
 import pybullet  # pytype:disable=import-error
 import pybullet_data
 from pybullet_utils import bullet_client
@@ -33,13 +32,20 @@ parser.add_argument("-hdw", "--hardware_mode", action='store_true', help='Hardwa
 parser.add_argument("-arp", "--action_repeat", help="Repeats the action applied on hardware.", type=int, default=1)
 args = parser.parse_args()
 
+# I had gto displace these statement in the preamble as it did not like it if you imported packages inside methdos.
+if args.hardware_mode:
+    # imports the robot interface in the case where the code is
+    os.sys.path.append("/media/f89b4767-18eb-4289-8b1c-1981706279e6/a1/motion_imitation")
+    from motion_imitation.robots import a1_robot, robot_config
+else:
+    os.sys.path.append("/media/arnaud/arnaud/a1/motion_imitation")
+    from motion_imitation.robots import a1, robot_config  # for sim
+
 
 class RobotA1:
 
     def __init__(self):
         if args.hardware_mode:
-            os.sys.path.append("/home/unitree/arnaud/motion_imitation")
-            from motion_imitation.robots import a1_robot  # imports the robot interface in the case where the code is
             # run on hardware.
             # No environment is needed for hardware tests.
             p = bullet_client.BulletClient(connection_mode=pybullet.DIRECT)
