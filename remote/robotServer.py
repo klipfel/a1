@@ -24,7 +24,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--kp", help='Proportional gain.', type=float, default=50.0)
 parser.add_argument("--kd", help='Derivative gain.', type=float, default=2.0)
 parser.add_argument("--ip_host", help='Host ip address, where the Pyro deamon will be called and where the name server'
-                                 'should be instanciated.', type=str, default="192.168.123.24")
+                                 'should be instanciated, it should an IP address on the host.', type=str, default="192.168.123.12")
 parser.add_argument("-v", "--visualize", action='store_true', help='Activates the rendering in sim mode when present.')
 parser.add_argument("-nc", "--no_control", action='store_true', help='If flag is present the control command is not'
                                                                      'not sent to the Low-Level DC motors.')
@@ -149,7 +149,7 @@ if __name__ == "__main__":
     p_server = RobotA1()
     # If testing on a single machine use the loopback ip address 127.0.0.1
     daemon = Pyro5.api.Daemon(host=f"{args.ip_host}", port=2020)             # make a Pyro daemon
-    ns = Pyro5.api.locate_ns()             # find the name server
+    ns = Pyro5.api.locate_ns(host="192.168.123.24")             # find the name server
     # TODO not sure about how to register or what to register, will I have to different objects? Maybe it is better to
     # TODO create a wrapper of the policy class in the control utilities.
     uri = daemon.register(p_server)    # register the greeting maker as a Pyro object
