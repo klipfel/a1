@@ -60,6 +60,7 @@ class RobotA1:
             motor_kds = np.array([args.kd] * 12)
             robot.SetMotorGains(motor_kps, motor_kds)
             gains = robot.GetMotorGains()
+            print(f"Robot gains: ", gains)
             print("Robot Kps: ", robot.motor_kps)
             print("Robot Kds: ", robot.motor_kds)
         else:
@@ -127,6 +128,7 @@ class RobotA1:
     def get_action(self, action):      # exposed as 'proxy.attr' writable
         # TODO ADD A FLAG TO APPLY IT OR NOT
         self.action = np.array(action)
+        print(self.action)
         if not self.args.no_control:
             self.apply_action()
         else:

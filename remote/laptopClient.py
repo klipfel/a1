@@ -147,6 +147,7 @@ class LaptopPolicy:
 
     def get_sensor_data(self):
         self.most_recent_robot_sensor_data = self.robot.get_sensor_data()
+        print(f"Sensor data: {self.most_recent_robot_sensor_data}")
 
     def get_robot_joint_postions(self):
         '''
