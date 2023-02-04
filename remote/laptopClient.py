@@ -6,6 +6,9 @@ import numpy as np
 import time
 import argparse
 import os
+
+import self as self
+import tqdm
 # Pybullet.
 import pybullet  # pytype:disable=import-error
 import pybullet_data
@@ -16,6 +19,8 @@ from motion_clips.motionClip import MotionClipParser
 import datetime
 from utilities.motion_imitation_config import MotionImitationConfig
 # TODO not complete, I actually don't need this code.
+
+LINE = "-"*100
 
 
 def create_tmp_data_folder():
@@ -58,6 +63,8 @@ class LaptopPolicy:
                      }
         self.motion_clip_frame_rate = 0.001 # in seconds
         self.control_time = 0.02 # in seconds
+        self.ini_conf = None
+        self.most_recent_robot_sensor_data = None
 
     def get_robot(self):
         '''
@@ -133,27 +140,79 @@ class LaptopPolicy:
         self.get_policy()
         self.get_obs_parser()
         self.get_action_bridge()
-        self.test_loop()
+        self.initial_joint_matching()
+        # self.keep_initial_frame()
         self.motion_clip_tracking()
         self.write_data_to_csv()
 
-    def test_loop(self):
+    def get_sensor_data(self):
+        self.most_recent_robot_sensor_data = self.robot.get_sensor_data()
+
+    def get_robot_joint_postions(self):
+        '''
+        :return: list of joint positions
+        '''
+        return self.most_recent_robot_sensor_data[3:3+12]
+
+    def send_action_to_robot(self, action):
+        self.robot.get_action(action.tolist())
+
+    def go_to_fixed_configuration(self, target_jp, alpha=0.8, nsteps=2000, dt=0.005):
+        """
+        Sets the robot in an initial configuration. Preferably close to the ones the robot was trained on at the start
+        of the training episodes. Prepares the robot for policy.
+        :param alpha: during 0.8*steps the robot will gradually be guided to the desired_motor_angle, and during 0.2*n_steps
+        it will be asked to go there directly. First step: transition and then once the joint configuration is not too
+        far the robot is controlled to it.
+        """
+        print(LINE)
+        print("WARNING, THE ROBOT IS GOING TO BE CONTROLLED TO A FIXED CONFIGURATION...")
+        print(f"Setting joint positions to: {target_jp}")
+        self.get_sensor_data()
+        current_motor_angle = np.array(self.get_robot_joint_postions())
+        print("Current joint positions:", current_motor_angle)
+        for t in tqdm.tqdm(range(nsteps)):
+            blend_ratio = np.minimum(t / (nsteps*alpha), 1)
+            action = (1 - blend_ratio) * current_motor_angle + blend_ratio * target_jp
+            self.send_action_to_robot(action)
+            time.sleep(dt)  # the example used 0.005.
+        print(LINE)
+
+    def initial_joint_matching(self):
+        self.ini_joint_positions = self.motion_clip_parser.motion_clip["Interp_Motion_Data"][0][-12:]
+        input(f"PRESS ENTER TO START THE INITIAL JOINT MATCHING......\n")
+        self.go_to_fixed_configuration(self.ini_joint_positions,
+                                       alpha=0.8,
+                                       nsteps=2000,
+                                       dt=self.motion_clip_frame_rate)
+        print(LINE)
+
+    def keep_initial_frame(self):
         '''
         Test loop for the hardware where the robot is controlled to an initial joint configuration.
         Initial state matching is not possible on hdw.
         :return:
         '''
-        input("PROCEED TO INITIAL TEST ON HDW?")
-        for _ in range(100):
+        n_control_step = 2000
+        input(f"PROCEED TO INITIAL TEST ON HDW? THE POLICY IS GOING TO BE ASKED TO KEEP THE INITIAL STATE"
+              f" FOR {n_control_step} control steps.")
+        for _ in range(n_control_step):
             # Inference loop.
             t0 = time.time()
             obs_np = self.obs_parser.observe(target_frame=0)  # REMOTE
             # print(f"SENSOR DATA at time = {t0}:{self.obs_parser.robot_data}")
             action_np = self.policy.inference(obs_np,  std=[0.1,0.3,0.3]*4)
             action_robot = self.action_bridge.adapt(action_np)
-            self.robot.get_action(action_robot.tolist())  # REMOTE
+            self.send_action_to_robot(action_robot)  # REMOTE
             delta = time.time() - t0
             print(f"Time of inference: {delta}")
+            # Frame update
+            # TODO maybe dilute the control a bit, best would to smaple from policy every 0.02 sec amnd in the
+            # TODO meantime, on the robot, you can just set some intermediary goals
+            if delta < self.control_time:
+                # in this case you can make the robot sleep a bit
+                time.sleep(self.control_time-delta)
+            # TODO add a time.sleep in any case
             self.save_data(obs=obs_np,
                            action_np=action_np,
                            action_robot=action_robot,
@@ -173,7 +232,7 @@ class LaptopPolicy:
             # print(f"SENSOR DATA at time = {t0}:{self.obs_parser.robot_data}")
             action_np = self.policy.inference(obs_np,  std=[0.1,0.3,0.3]*4)
             action_robot = self.action_bridge.adapt(action_np)
-            self.robot.get_action(action_robot.tolist())  # REMOTE
+            self.send_action_to_robot(action_robot)  # REMOTE
             delta = time.time() - t0
             print(f"Time of inference: {delta}")
             # Frame update

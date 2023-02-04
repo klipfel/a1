@@ -25,6 +25,7 @@ parser.add_argument("--kp", help='Proportional gain.', type=float, default=50.0)
 parser.add_argument("--kd", help='Derivative gain.', type=float, default=2.0)
 parser.add_argument("--ip_host", help='Host ip address, where the Pyro deamon will be called and where the name server'
                                  'should be instanciated, it should an IP address on the host.', type=str, default="192.168.123.12")
+parser.add_argument("--ns_ip_host", help='Host ip address of the Name Server in Pyro', type=str, default="192.168.123.24")
 parser.add_argument("-v", "--visualize", action='store_true', help='Activates the rendering in sim mode when present.')
 parser.add_argument("-nc", "--no_control", action='store_true', help='If flag is present the control command is not'
                                                                      'not sent to the Low-Level DC motors.')
@@ -103,11 +104,6 @@ class RobotA1:
         self.sensor_data = {}
         self.action = None
 
-    def processing(self, obs):
-        numpy_array = numpy.array([1,2,12.6456110,54.4545154,2.5645154,5,2,5.5455451,2,5,25,4,2,54,2,5,5,56,4], dtype=numpy.float32)
-        self.joint_position_target = numpy_array.tolist()
-        return self.joint_position_target
-
     @Pyro5.server.expose
     def get_sensor_data(self):      # exposed as 'proxy.attr' writable
         self.robot.ReceiveObservation()
@@ -149,7 +145,7 @@ if __name__ == "__main__":
     p_server = RobotA1()
     # If testing on a single machine use the loopback ip address 127.0.0.1
     daemon = Pyro5.api.Daemon(host=f"{args.ip_host}", port=2020)             # make a Pyro daemon
-    ns = Pyro5.api.locate_ns(host="192.168.123.24")             # find the name server
+    ns = Pyro5.api.locate_ns(host=args.ns_ip_host)             # find the name server
     # TODO not sure about how to register or what to register, will I have to different objects? Maybe it is better to
     # TODO create a wrapper of the policy class in the control utilities.
     uri = daemon.register(p_server)    # register the greeting maker as a Pyro object
