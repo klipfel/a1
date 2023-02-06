@@ -195,8 +195,8 @@ class LaptopPolicy:
         :return:
         '''
         n_control_step = 2000
-        input(f"PROCEED TO INITIAL TEST ON HDW? THE POLICY IS GOING TO BE ASKED TO KEEP THE INITIAL STATE"
-              f" FOR {n_control_step} control steps.")
+        #input(f"PROCEED TO INITIAL TEST ON HDW? THE POLICY IS GOING TO BE ASKED TO KEEP THE INITIAL STATE"
+        #      f" FOR {n_control_step} control steps.")
         for _ in range(n_control_step):
             # Inference loop.
             t0 = time.time()
@@ -224,7 +224,7 @@ class LaptopPolicy:
         Function that implements the motion clip tracking.
         :return:
         '''
-        input("PROCEED TO MOTION CLIP TRACKING ON HDW?")
+        #input("PROCEED TO MOTION CLIP TRACKING ON HDW?")
         frame = 0
         while frame < self.motion_clip_parser.motion_clip_sim_frames:
             # Inference loop.

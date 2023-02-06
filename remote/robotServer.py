@@ -108,10 +108,12 @@ class RobotA1:
     @Pyro5.server.expose
     def get_sensor_data(self):      # exposed as 'proxy.attr' writable
         self.robot.ReceiveObservation()
-        self.motor_angles = self.robot.GetTrueMotorAngles()  # in [-\pi;+\pi]
-        self.motor_angle_rates = self.robot.GetTrueMotorVelocities()
-        self.rpy = np.array(self.robot.GetTrueBaseRollPitchYaw())
-        self.rpy_rate = self.robot.GetTrueBaseRollPitchYawRate()
+        self.motorTorques = self.robot.GetMotorTorques()
+        print(self.motorTorques)
+        self.motor_angles = self.robot.GetMotorAngles()  # in [-\pi;+\pi]
+        self.motor_angle_rates = self.robot.GetMotorVelocities()
+        self.rpy = np.array(self.robot.GetBaseRollPitchYaw())
+        self.rpy_rate = self.robot.GetBaseRollPitchYawRate()
         self.com = self.robot.GetBasePosition()
         self.lin_vel = self.robot.GetBaseVelocity()
         self.rotmat = np.array(pybullet.getMatrixFromQuaternion(pybullet.getQuaternionFromEuler(self.rpy))) #TODO to check
@@ -128,7 +130,7 @@ class RobotA1:
     def get_action(self, action):      # exposed as 'proxy.attr' writable
         # TODO ADD A FLAG TO APPLY IT OR NOT
         self.action = np.array(action)
-        print(self.action)
+        # print(self.action)
         if not self.args.no_control:
             self.apply_action()
         else:
