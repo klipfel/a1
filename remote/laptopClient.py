@@ -142,7 +142,8 @@ class LaptopPolicy:
         self.get_action_bridge()
         self.initial_joint_matching()
         # self.keep_initial_frame()
-        self.motion_clip_tracking()
+        # self.motion_clip_tracking()
+        self.smooth_motion_clip_tracking()
         self.write_data_to_csv()
 
     def get_sensor_data(self):
@@ -178,6 +179,20 @@ class LaptopPolicy:
             self.send_action_to_robot(action)
             time.sleep(dt)  # the example used 0.005.
         print(LINE)
+
+    def smooth_control(self, starting_motor_angles, target_jp, nsteps=2000, dt=0.005):
+            """
+            Sets the robot in an initial configuration. Preferably close to the ones the robot was trained on at the start
+            of the training episodes. Prepares the robot for policy.
+            :param alpha: during 0.8*steps the robot will gradually be guided to the desired_motor_angle, and during 0.2*n_steps
+            it will be asked to go there directly. First step: transition and then once the joint configuration is not too
+            far the robot is controlled to it.
+            """
+            for t in range(nsteps):
+                blend_ratio = np.minimum(t / (nsteps), 1)
+                action = (1 - blend_ratio) * starting_motor_angles + blend_ratio * target_jp
+                self.send_action_to_robot(action)
+                time.sleep(dt)  # the example used 0.005.
 
     def initial_joint_matching(self):
         self.ini_joint_positions = self.motion_clip_parser.motion_clip["Interp_Motion_Data"][0][-12:]
@@ -248,6 +263,34 @@ class LaptopPolicy:
                            action_robot=action_robot,
                            control_time=delta)
 
+    def smooth_motion_clip_tracking(self):
+        '''
+        Function that implements the motion clip tracking.
+        :return:
+        '''
+        #input("PROCEED TO MOTION CLIP TRACKING ON HDW?")
+        frame = 0
+        while frame < self.motion_clip_parser.motion_clip_sim_frames:
+            # Inference loop.
+            t0 = time.time()
+            obs_np = self.obs_parser.observe(target_frame=frame)  # REMOTE
+            # print(f"SENSOR DATA at time = {t0}:{self.obs_parser.robot_data}")
+            action_np = self.policy.inference(obs_np,  std=[0.1,0.3,0.3]*4)
+            action_robot = self.action_bridge.adapt(action_np)
+            # TODO do the control dilution on the robotServer to save communication times
+            self.smooth_control(starting_motor_angles=self.obs_parser.robot_data[3:3+12],
+                                target_jp=action_robot,
+                                nsteps=20,
+                                dt=self.motion_clip_frame_rate)
+            delta = time.time() - t0
+            print(f"Control time: {delta}")
+            dframe = int(delta/self.motion_clip_frame_rate) + 1
+            frame += dframe
+            # save data
+            self.save_data(obs=obs_np,
+                           action_np=action_np,
+                           action_robot=action_robot,
+                           control_time=delta)
 
 # Client loop.
 if __name__ == "__main__":

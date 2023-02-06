@@ -109,6 +109,13 @@ class RobotA1:
     def get_sensor_data(self):      # exposed as 'proxy.attr' writable
         self.robot.ReceiveObservation()
         self.motorTorques = self.robot.GetMotorTorques()
+        # Safety to check if the torques are not too high
+        self.max_torque = np.max(np.abs(self.motorTorques))
+        if self.max_torque > 34.0:
+            print(f"Torque too HIGH!!!! SHUTTING DOWN!!! VALUE {self.max_torque}")
+            print(f"Torque values for each motor: {self.motorTorques}")
+            self.robot.Terminate()
+            sys.exit(1)
         print(self.motorTorques)
         self.motor_angles = self.robot.GetMotorAngles()  # in [-\pi;+\pi]
         self.motor_angle_rates = self.robot.GetMotorVelocities()
