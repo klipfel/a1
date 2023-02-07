@@ -21,7 +21,7 @@ from utilities.motion_imitation_config import MotionImitationConfig
 # TODO not complete, I actually don't need this code.
 
 LINE = "-"*100
-CONTROL_SIM_RATE = 0.0005
+CONTROL_SIM_RATE = 0.0000
 REF_FRAME_RATE = 0.001
 
 def create_tmp_data_folder():
@@ -201,7 +201,7 @@ class LaptopPolicy:
         self.go_to_fixed_configuration(self.ini_joint_positions,
                                        alpha=0.8,
                                        nsteps=2000,
-                                       dt=self.motion_clip_frame_rate)
+                                       dt=0.001)
         print(LINE)
 
     def keep_initial_frame(self):

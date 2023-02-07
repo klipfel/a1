@@ -104,7 +104,7 @@ class RobotA1:
             # Hardware class for the robot. (wrapper)
             robot = a1_robot.A1Robot(pybullet_client=p,
                                      action_repeat=args.action_repeat,
-                                     time_step=CONTROL_SIM_RATE,
+                                     time_step=HDW_RESET_TIME_STEP,
                                      control_latency=0.0)
             motor_kps = np.array([args.kp] * 12)
             motor_kds = np.array([args.kd] * 12)
