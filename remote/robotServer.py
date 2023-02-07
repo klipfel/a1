@@ -76,10 +76,10 @@ MAX_INSTANTANEOUS_TORQUE = [
 #     52.4, 28.6, 28.6
 # ]
 MAX_VELOCITY = [
-    50.0, 28.0, 28.0,
-    50.0, 28.0, 28.0,
-    50.0, 28.0, 28.0,
-    50.0, 28.0, 28.0
+    40, 28.0, 28.0,
+    40, 28.0, 28.0,
+    40, 28.0, 28.0,
+    40, 28.0, 28.0
 ]
 def create_tmp_data_folder():
     # Folder where the test data will be saved
@@ -216,22 +216,23 @@ class RobotA1:
         return False
 
     def clamp_action(self, bool):
+        # TODO make it work, ot does not seem to have any effect on the robot
         '''
         Clamps actions when it is estimated that the policy actions will cause a too big displacement of the
         joints.
         :param bool:
         :return:
         '''
-        if bool and self.crazy_motor_velocity_over_bound is not None:
+        if bool:
             self.action = self.action - self.crazy_motor_velocity_over_bound*self.measured_control_dt
 
     @Pyro5.server.expose
     def get_action(self, action):      # exposed as 'proxy.attr' writable
         # TODO ADD A FLAG TO APPLY IT OR NOT
         self.control_times.append(time.time())
+        self.action = np.array(action)
         self.actions.append(action)
         self.last_action = self.action
-        self.action = np.array(action)
         # Safety check
         jv_issue = self.safety_check_joint_velocity()
         self.clamp_action(jv_issue)
