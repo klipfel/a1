@@ -44,7 +44,9 @@ else:
     from motion_imitation.robots import a1, robot_config  # for sim
 
 # basics constants
-CONTROL_SIM_RATE = 0.001
+CONTROL_SIM_RATE = 0.0005
+HDW_RESET_TIME_STEP = 0.002  # used for pybullet to reset a1 to initial joint pose
+# TODO are they their own time.sleep in their code
 
 MOTOR_NAMES = [
     "FR_hip_joint",
@@ -133,7 +135,7 @@ class RobotA1:
                           on_rack=False,
                           action_repeat=args.action_repeat,
                           time_step=CONTROL_SIM_RATE,  # time step of the simulation
-                          control_latency=0.0,
+                          control_latency=0.01,
                           enable_action_interpolation=True,
                           enable_action_filter=False)
             motor_kps = np.array([args.kp] * 12)
@@ -163,7 +165,7 @@ class RobotA1:
         self.robot.ReceiveObservation()  # need to call that function anytime before reading sensor
         self.motorTorques = self.robot.GetMotorTorques()
         # Checks if the generated torque due ot the new action is withing safety ranges.
-        self.safety_check_torque()
+        # self.safety_check_torque()
         self.motor_angles = self.robot.GetMotorAngles()  # in [-\pi;+\pi]
         self.motor_angle_rates = self.robot.GetMotorVelocities()
         self.rpy = np.array(self.robot.GetBaseRollPitchYaw())
@@ -181,6 +183,7 @@ class RobotA1:
         return self.robot_data.tolist()
 
     def safety_check_torque(self):
+        # TODO make it work on HDW, I have a broadcasting issue from shape 0 to 12 on HDW
         # Safety to check if the torques are not too high
         # self.motorTorques = self.robot.GetMotorTorques()
         abs_torque = np.abs(self.motorTorques)-MAX_INSTANTANEOUS_TORQUE_EPS
@@ -230,12 +233,16 @@ class RobotA1:
     def get_action(self, action):      # exposed as 'proxy.attr' writable
         # TODO ADD A FLAG TO APPLY IT OR NOT
         self.control_times.append(time.time())
+        if len(self.control_times) > 1:
+            # Computes the expected joint velocity from the new policy action
+            self.measured_control_dt = self.control_times[-1] - self.control_times[-2]
+            print(f"Control time : {self.measured_control_dt}")
         self.action = np.array(action)
         self.actions.append(action)
         self.last_action = self.action
         # Safety check
-        jv_issue = self.safety_check_joint_velocity()
-        self.clamp_action(jv_issue)
+        # jv_issue = self.safety_check_joint_velocity()
+        # self.clamp_action(jv_issue)
         # print(self.action)
         if not self.args.no_control:
             self.apply_action()

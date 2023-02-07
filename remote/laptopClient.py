@@ -21,7 +21,8 @@ from utilities.motion_imitation_config import MotionImitationConfig
 # TODO not complete, I actually don't need this code.
 
 LINE = "-"*100
-CONTROL_SIM_RATE = 0.001
+CONTROL_SIM_RATE = 0.0005
+REF_FRAME_RATE = 0.001
 
 def create_tmp_data_folder():
     # Folder where the test data will be saved
@@ -255,7 +256,7 @@ class LaptopPolicy:
             if delta < self.control_time:
                 # in this case you can make the robot sleep a bit
                 time.sleep(self.control_time-delta)
-            dframe = int(delta/self.motion_clip_frame_rate) + 1
+            dframe = int(delta/REF_FRAME_RATE) + 1
             frame += dframe
             # save data
             self.save_data(obs=obs_np,
@@ -284,7 +285,7 @@ class LaptopPolicy:
                                 dt=self.motion_clip_frame_rate)
             delta = time.time() - t0
             print(f"Control time: {delta}")
-            dframe = int(delta/self.motion_clip_frame_rate) + 1
+            dframe = int(delta/REF_FRAME_RATE) + 1
             frame += dframe
             # save data
             self.save_data(obs=obs_np,
