@@ -21,7 +21,7 @@ from utilities.motion_imitation_config import MotionImitationConfig
 # TODO not complete, I actually don't need this code.
 
 LINE = "-"*100
-
+CONTROL_SIM_RATE = 0.001
 
 def create_tmp_data_folder():
     # Folder where the test data will be saved
@@ -61,7 +61,7 @@ class LaptopPolicy:
                      "action_robot": [],
                      "control_times": []
                      }
-        self.motion_clip_frame_rate = 0.001 # in seconds
+        self.motion_clip_frame_rate = CONTROL_SIM_RATE # in seconds
         self.control_time = 0.02 # in seconds
         self.ini_conf = None
         self.most_recent_robot_sensor_data = None

@@ -1,7 +1,7 @@
 import os, sys
 import Pyro5.server
 import Pyro5.api
-import logging
+import logging  # TODO log everything in  tmp file
 import numpy
 import time
 import argparse
@@ -9,6 +9,7 @@ import pybullet  # pytype:disable=import-error
 import pybullet_data
 from pybullet_utils import bullet_client
 import numpy as np
+import datetime
 
 # TODO explore Pyro callbacks
 
@@ -42,10 +43,57 @@ else:
     os.sys.path.append("/media/arnaud/arnaud/a1/motion_imitation")
     from motion_imitation.robots import a1, robot_config  # for sim
 
+# basics constants
+CONTROL_SIM_RATE = 0.001
+
+MOTOR_NAMES = [
+    "FR_hip_joint",
+    "FR_upper_joint",
+    "FR_lower_joint",
+    "FL_hip_joint",
+    "FL_upper_joint",
+    "FL_lower_joint",
+    "RR_hip_joint",
+    "RR_upper_joint",
+    "RR_lower_joint",
+    "RL_hip_joint",
+    "RL_upper_joint",
+    "RL_lower_joint",
+]
+# MAX efforts in NM
+MAX_INSTANTANEOUS_TORQUE_EPS = 0.0 # tolerated different in Nm
+MAX_INSTANTANEOUS_TORQUE = [
+    20, 55, 55,
+    20, 55, 55,
+    20, 55, 55,
+    20, 55, 55
+]
+# MAX VELOCITY in rad/s
+# MAX_VELOCITY = [
+#     52.4, 28.6, 28.6,
+#     52.4, 28.6, 28.6,
+#     52.4, 28.6, 28.6,
+#     52.4, 28.6, 28.6
+# ]
+MAX_VELOCITY = [
+    50.0, 28.0, 28.0,
+    50.0, 28.0, 28.0,
+    50.0, 28.0, 28.0,
+    50.0, 28.0, 28.0
+]
+def create_tmp_data_folder():
+    # Folder where the test data will be saved
+    date = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    test_data_folder = "/tmp" + "/" + date
+    if not os.path.exists(test_data_folder):
+        os.makedirs(test_data_folder)
+    return test_data_folder
+
 
 class RobotA1:
 
     def __init__(self):
+        self.folder_data = create_tmp_data_folder()
         if args.hardware_mode:
             # run on hardware.
             # No environment is needed for hardware tests.
@@ -54,7 +102,7 @@ class RobotA1:
             # Hardware class for the robot. (wrapper)
             robot = a1_robot.A1Robot(pybullet_client=p,
                                      action_repeat=args.action_repeat,
-                                     time_step=0.001,
+                                     time_step=CONTROL_SIM_RATE,
                                      control_latency=0.0)
             motor_kps = np.array([args.kp] * 12)
             motor_kds = np.array([args.kd] * 12)
@@ -76,8 +124,7 @@ class RobotA1:
             p.setPhysicsEngineParameter(numSolverIterations=num_bullet_solver_iterations)
             p.setPhysicsEngineParameter(enableConeFriction=0)
             p.setPhysicsEngineParameter(numSolverIterations=30)
-            simulation_time_step = 0.001
-            p.setTimeStep(simulation_time_step)
+            p.setTimeStep(CONTROL_SIM_RATE)
             p.setGravity(0, 0, -9.8)
             p.setPhysicsEngineParameter(enableConeFriction=0)
             p.setAdditionalSearchPath(pybullet_data.getDataPath())
@@ -85,7 +132,7 @@ class RobotA1:
             robot = a1.A1(pybullet_client=p,
                           on_rack=False,
                           action_repeat=args.action_repeat,
-                          time_step=simulation_time_step,  # time step of the simulation
+                          time_step=CONTROL_SIM_RATE,  # time step of the simulation
                           control_latency=0.0,
                           enable_action_interpolation=True,
                           enable_action_filter=False)
@@ -104,19 +151,19 @@ class RobotA1:
         # sensor data dict
         self.sensor_data = {}
         self.action = None
+        self.last_action = None
+        self.control_times = []
+        self.measured_control_dt = None
+        self.actions = []
+        self.torque_over_bound = False
+        self.crazy_motor_velocity_over_bound = None
 
     @Pyro5.server.expose
     def get_sensor_data(self):      # exposed as 'proxy.attr' writable
-        self.robot.ReceiveObservation()
+        self.robot.ReceiveObservation()  # need to call that function anytime before reading sensor
         self.motorTorques = self.robot.GetMotorTorques()
-        # Safety to check if the torques are not too high
-        self.max_torque = np.max(np.abs(self.motorTorques))
-        if self.max_torque > 34.0:
-            print(f"Torque too HIGH!!!! SHUTTING DOWN!!! VALUE {self.max_torque}")
-            print(f"Torque values for each motor: {self.motorTorques}")
-            self.robot.Terminate()
-            sys.exit(1)
-        print(self.motorTorques)
+        # Checks if the generated torque due ot the new action is withing safety ranges.
+        self.safety_check_torque()
         self.motor_angles = self.robot.GetMotorAngles()  # in [-\pi;+\pi]
         self.motor_angle_rates = self.robot.GetMotorVelocities()
         self.rpy = np.array(self.robot.GetBaseRollPitchYaw())
@@ -133,10 +180,61 @@ class RobotA1:
                                           axis=None)
         return self.robot_data.tolist()
 
+    def safety_check_torque(self):
+        # Safety to check if the torques are not too high
+        # self.motorTorques = self.robot.GetMotorTorques()
+        abs_torque = np.abs(self.motorTorques)-MAX_INSTANTANEOUS_TORQUE_EPS
+        crazy_motor_torque = abs_torque > np.array(MAX_INSTANTANEOUS_TORQUE)
+        if np.any(crazy_motor_torque):
+            print(f"Torque too HIGH!!!! SHUTTING DOWN!!! X(")
+            print(f"Torque values for each motor: {self.motorTorques}")
+            self.torque_over_bound = True
+            # self.robot.Terminate()
+            # sys.exit(1)
+        self.torque_over_bound = False
+
+    def safety_check_joint_velocity(self):
+        '''
+        Checks the expected joint velocity that is going to be produeced by the new
+        joint target.
+        :return:
+        '''
+        if len(self.control_times) > 1:
+            # Computes the expected joint velocity from the new policy action
+            self.measured_control_dt = self.control_times[-1] - self.control_times[-2]
+            joint_velocity = np.array(self.actions[-1]) - np.array(self.actions[-2])
+            joint_velocity /= self.measured_control_dt
+            velocity_over_bound = (joint_velocity-MAX_VELOCITY)*(joint_velocity>0) + (joint_velocity+MAX_VELOCITY)*(joint_velocity<0)
+            crazy_motor_velocity = np.abs(joint_velocity) > np.array(MAX_VELOCITY)
+            self.crazy_motor_velocity_over_bound = velocity_over_bound*crazy_motor_velocity
+            if np.any(crazy_motor_velocity):
+                # print(f"Joint velocity too HIGH!!!! SHUTTING DOWN!!! X(")
+                # print(f"Joint velocity values for each motor: {joint_velocity}")
+                # print(f"Joint velocity overbound for each motor: {self.crazy_motor_velocity_over_bound}")
+                return True
+            return False
+        return False
+
+    def clamp_action(self, bool):
+        '''
+        Clamps actions when it is estimated that the policy actions will cause a too big displacement of the
+        joints.
+        :param bool:
+        :return:
+        '''
+        if bool and self.crazy_motor_velocity_over_bound is not None:
+            self.action = self.action - self.crazy_motor_velocity_over_bound*self.measured_control_dt
+
     @Pyro5.server.expose
     def get_action(self, action):      # exposed as 'proxy.attr' writable
         # TODO ADD A FLAG TO APPLY IT OR NOT
+        self.control_times.append(time.time())
+        self.actions.append(action)
+        self.last_action = self.action
         self.action = np.array(action)
+        # Safety check
+        jv_issue = self.safety_check_joint_velocity()
+        self.clamp_action(jv_issue)
         # print(self.action)
         if not self.args.no_control:
             self.apply_action()
