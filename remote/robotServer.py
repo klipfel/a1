@@ -102,10 +102,13 @@ class RobotA1:
             p = bullet_client.BulletClient(connection_mode=pybullet.DIRECT)
             p.setAdditionalSearchPath(pybullet_data.getDataPath())
             # Hardware class for the robot. (wrapper)
-            robot = a1_robot.A1Robot(pybullet_client=p,
-                                     action_repeat=args.action_repeat,
-                                     time_step=HDW_RESET_TIME_STEP,
-                                     control_latency=0.0)
+            robot = a1_robot.A1Robot(
+                pybullet_client=p,
+                action_repeat=args.action_repeat,
+                time_step=HDW_RESET_TIME_STEP,
+                control_latency=0.0,
+                reset_time=-1  # prevents issues during resetting
+            )   
             motor_kps = np.array([args.kp] * 12)
             motor_kds = np.array([args.kd] * 12)
             robot.SetMotorGains(motor_kps, motor_kds)
