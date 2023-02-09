@@ -44,7 +44,7 @@ else:
     from motion_imitation.robots import a1, robot_config  # for sim
 
 # basics constants
-CONTROL_SIM_RATE = 0.0005
+CONTROL_SIM_RATE = 0.001 #0.0001 # sim 0.001, latency 0.001
 HDW_RESET_TIME_STEP = 0.002  # used for pybullet to reset a1 to initial joint pose
 # TODO are they their own time.sleep in their code
 
@@ -108,7 +108,7 @@ class RobotA1:
                 time_step=HDW_RESET_TIME_STEP,
                 control_latency=0.0,
                 reset_time=-1  # prevents issues during resetting
-            )   
+            )
             motor_kps = np.array([args.kp] * 12)
             motor_kds = np.array([args.kd] * 12)
             robot.SetMotorGains(motor_kps, motor_kds)
@@ -138,9 +138,10 @@ class RobotA1:
                           on_rack=False,
                           action_repeat=args.action_repeat,
                           time_step=CONTROL_SIM_RATE,  # time step of the simulation
-                          control_latency=0.01,
+                          control_latency=0.001,
                           enable_action_interpolation=True,
                           enable_action_filter=False)
+            # robot.SetBaseMasses([10.0])
             motor_kps = np.array([args.kp] * 12)
             motor_kds = np.array([args.kd] * 12)
             robot.SetMotorGains(motor_kps, motor_kds)

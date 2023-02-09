@@ -21,7 +21,7 @@ from utilities.motion_imitation_config import MotionImitationConfig
 # TODO not complete, I actually don't need this code.
 
 LINE = "-"*100
-CONTROL_SIM_RATE = 0.0000
+CONTROL_SIM_RATE = 0.0001 # 0.0001 # sim 0.001
 REF_FRAME_RATE = 0.001
 
 def create_tmp_data_folder():
@@ -197,10 +197,14 @@ class LaptopPolicy:
 
     def initial_joint_matching(self):
         self.ini_joint_positions = self.motion_clip_parser.motion_clip["Interp_Motion_Data"][0][-12:]
+        # self.ini_joint_positions = np.array([-0.5, 0.9, -1.8,
+        #                                       0.5, 0.9, -1.8,
+        #                                       0, 0.9, -1.8,
+        #                                       0, 0.9, -1.8])
         input(f"PRESS ENTER TO START THE INITIAL JOINT MATCHING......\n")
         self.go_to_fixed_configuration(self.ini_joint_positions,
                                        alpha=0.8,
-                                       nsteps=2000,
+                                       nsteps=4000,
                                        dt=0.001)
         print(LINE)
 
@@ -285,13 +289,15 @@ class LaptopPolicy:
                                 dt=self.motion_clip_frame_rate)
             delta = time.time() - t0
             print(f"Control time: {delta}")
-            dframe = int(delta/REF_FRAME_RATE) + 1
+            # dframe = int(delta/REF_FRAME_RATE) + 1
+            dframe = 20
             frame += dframe
             # save data
             self.save_data(obs=obs_np,
                            action_np=action_np,
                            action_robot=action_robot,
                            control_time=delta)
+
 
 # Client loop.
 if __name__ == "__main__":
