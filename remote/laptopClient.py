@@ -5,7 +5,7 @@ import config
 import numpy as np
 import time
 import argparse
-import os
+import os, sys
 
 import self as self
 import tqdm
@@ -14,14 +14,14 @@ import pybullet  # pytype:disable=import-error
 import pybullet_data
 from pybullet_utils import bullet_client
 from utilities.control_util import HdwMotionImitationObservationParser, MotionImitationActionBridge,\
-    ImitationPolicy, save_single_data_to_csv
+    ImitationPolicy, save_single_data_to_csv, MotionImitationResidualPolicyActionBridge
 from motion_clips.motionClip import MotionClipParser
 import datetime
 from utilities.motion_imitation_config import MotionImitationConfig
 # TODO not complete, I actually don't need this code.
 
 LINE = "-"*100
-CONTROL_SIM_RATE = 0.0001 # 0.0001 # sim 0.001
+CONTROL_SIM_RATE = 0.001 # 0.0001 # sim 0.001
 REF_FRAME_RATE = 0.001
 
 def create_tmp_data_folder():
@@ -44,6 +44,7 @@ class LaptopPolicy:
         parser.add_argument('--run_path', help='wandb run path entity/project/run_id.', type=str, default='')
         parser.add_argument('--update', help='update number of the model to test', type=int, default=None)
         parser.add_argument("-obsn", "--obs_normalization", help="Normalize or not observations based on the data accumulated in Raisim.", action='store_true')
+        parser.add_argument("--policy_type", help="Either residual or non-residual policy.", type=str, default='')
         args = parser.parse_args()
         self.args = args
         self.robot = self.get_robot()  # HERE IT IS THE URI OF THE OBJECT SO REMOTE
@@ -55,7 +56,7 @@ class LaptopPolicy:
         self.obs_parser = None
         self.motion_clip_parser = None
         self.action_bridge = None
-        self.leg_bounds = MotionImitationConfig.LEG_BOUNDS
+        self.leg_bounds = None
         self.uri = None
         self.data = {"obs": [],
                      "action_np": [],
@@ -95,15 +96,36 @@ class LaptopPolicy:
         # self.ini_orn = self.ini_base_state[3:]
 
     def get_policy(self):
-        self.policy = ImitationPolicy(self.args, folder=self.test_data_folder)
+        if self.args.policy_type == "no-res":
+            self.policy = ImitationPolicy(self.args, folder=self.test_data_folder, ob_dim=342)
+        elif self.args.policy_type == "res":
+            self.policy = ImitationPolicy(self.args, folder=self.test_data_folder, ob_dim=366)
+        else:
+            print("Unknow policy type. Please choose between res or non-res.")
+            sys.exit(1)
 
     def get_obs_parser(self):
         self.obs_parser = HdwMotionImitationObservationParser(self.robot, self.args, self.policy,
                                                               motion_clip_parser=self.motion_clip_parser,
                                                               data_folder=self.test_data_folder)
+        if self.args.policy_type == "no-res":
+            self.obs_parser.set_obs_window(MotionImitationConfig.OBS_WINDOW)
+        elif self.args.policy_type == "res":
+            self.obs_parser.set_obs_window(MotionImitationConfig.OBS_WINDOW_RESIDUAL_POLICY)
+        else:
+            print("Unknow policy type. Please choose between res or no-res.")
+            sys.exit(1)
 
     def get_action_bridge(self):
-        self.action_bridge = MotionImitationActionBridge(self.robot, leg_bounds=self.leg_bounds)
+        if self.args.policy_type == "no-res":
+            self.leg_bounds = MotionImitationConfig.LEG_BOUNDS
+            self.action_bridge = MotionImitationActionBridge(self.robot, leg_bounds=self.leg_bounds)
+        elif self.args.policy_type == "res":
+            self.leg_bounds = MotionImitationConfig.LEG_BOUNDS_RESIDUAL_POLICY
+            self.action_bridge = MotionImitationResidualPolicyActionBridge(self.robot, leg_bounds=self.leg_bounds)
+        else:
+            print("Unknow policy type. Please choose between res or no-res.")
+            sys.exit(1)
 
     def test_inference_loop(self):
         self.get_motion_clip_parser()
@@ -118,6 +140,7 @@ class LaptopPolicy:
             obs_np = self.obs_parser.observe()  # REMOTE
             # print(f"SENSOR DATA at time = {t0}:{self.obs_parser.robot_data}")
             action_np = self.policy.inference(obs_np,  std=[0.1,0.3,0.3]*4)
+            self.action_bridge.set_mean(new_mean=list(self.obs_parser.motion_clip["Interp_Motion_Data"][0][-12:]))
             action_robot = self.action_bridge.adapt(action_np)
             self.robot.apply_action(action_robot.tolist())  # REMOTE
             delta = time.time() - t0
@@ -144,7 +167,7 @@ class LaptopPolicy:
         self.initial_joint_matching()
         # self.keep_initial_frame()
         # self.motion_clip_tracking()
-        self.smooth_motion_clip_tracking()
+        # self.smooth_motion_clip_tracking()
         self.write_data_to_csv()
 
     def get_sensor_data(self):
@@ -182,18 +205,18 @@ class LaptopPolicy:
         print(LINE)
 
     def smooth_control(self, starting_motor_angles, target_jp, nsteps=2000, dt=0.005):
-            """
-            Sets the robot in an initial configuration. Preferably close to the ones the robot was trained on at the start
-            of the training episodes. Prepares the robot for policy.
-            :param alpha: during 0.8*steps the robot will gradually be guided to the desired_motor_angle, and during 0.2*n_steps
-            it will be asked to go there directly. First step: transition and then once the joint configuration is not too
-            far the robot is controlled to it.
-            """
-            for t in range(nsteps):
-                blend_ratio = np.minimum(t / (nsteps), 1)
-                action = (1 - blend_ratio) * starting_motor_angles + blend_ratio * target_jp
-                self.send_action_to_robot(action)
-                time.sleep(dt)  # the example used 0.005.
+        """
+        Sets the robot in an initial configuration. Preferably close to the ones the robot was trained on at the start
+        of the training episodes. Prepares the robot for policy.
+        :param alpha: during 0.8*steps the robot will gradually be guided to the desired_motor_angle, and during 0.2*n_steps
+        it will be asked to go there directly. First step: transition and then once the joint configuration is not too
+        far the robot is controlled to it.
+        """
+        for t in range(nsteps):
+            blend_ratio = np.minimum(t / (nsteps), 1)
+            action = (1 - blend_ratio) * starting_motor_angles + blend_ratio * target_jp
+            self.send_action_to_robot(action)
+            time.sleep(dt)  # the example used 0.005.
 
     def initial_joint_matching(self):
         self.ini_joint_positions = self.motion_clip_parser.motion_clip["Interp_Motion_Data"][0][-12:]
@@ -223,6 +246,7 @@ class LaptopPolicy:
             obs_np = self.obs_parser.observe(target_frame=0)  # REMOTE
             # print(f"SENSOR DATA at time = {t0}:{self.obs_parser.robot_data}")
             action_np = self.policy.inference(obs_np,  std=[0.1,0.3,0.3]*4)
+            self.action_bridge.set_mean(new_mean=list(self.motion_clip_parser.motion_clip["Interp_Motion_Data"][0][-12:]))
             action_robot = self.action_bridge.adapt(action_np)
             self.send_action_to_robot(action_robot)  # REMOTE
             delta = time.time() - t0
@@ -252,6 +276,7 @@ class LaptopPolicy:
             obs_np = self.obs_parser.observe(target_frame=frame)  # REMOTE
             # print(f"SENSOR DATA at time = {t0}:{self.obs_parser.robot_data}")
             action_np = self.policy.inference(obs_np,  std=[0.1,0.3,0.3]*4)
+            self.action_bridge.set_mean(new_mean=list(self.motion_clip_parser.motion_clip["Interp_Motion_Data"][frame][-12:]))
             action_robot = self.action_bridge.adapt(action_np)
             self.send_action_to_robot(action_robot)  # REMOTE
             delta = time.time() - t0
@@ -281,6 +306,7 @@ class LaptopPolicy:
             obs_np = self.obs_parser.observe(target_frame=frame)  # REMOTE
             # print(f"SENSOR DATA at time = {t0}:{self.obs_parser.robot_data}")
             action_np = self.policy.inference(obs_np,  std=[0.1,0.3,0.3]*4)
+            self.action_bridge.set_mean(new_mean=list(self.motion_clip_parser.motion_clip["Interp_Motion_Data"][frame][-12:]))
             action_robot = self.action_bridge.adapt(action_np)
             # TODO do the control dilution on the robotServer to save communication times
             self.smooth_control(starting_motor_angles=self.obs_parser.robot_data[3:3+12],

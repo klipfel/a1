@@ -46,6 +46,7 @@ else:
 # basics constants
 CONTROL_SIM_RATE = 0.001 #0.0001 # sim 0.001, latency 0.001
 HDW_RESET_TIME_STEP = 0.002  # used for pybullet to reset a1 to initial joint pose
+CONTROL_LATENCY_SIM = 0.00
 # TODO are they their own time.sleep in their code
 
 MOTOR_NAMES = [
@@ -138,7 +139,7 @@ class RobotA1:
                           on_rack=False,
                           action_repeat=args.action_repeat,
                           time_step=CONTROL_SIM_RATE,  # time step of the simulation
-                          control_latency=0.001,
+                          control_latency=CONTROL_LATENCY_SIM,
                           enable_action_interpolation=True,
                           enable_action_filter=False)
             # robot.SetBaseMasses([10.0])
@@ -168,10 +169,12 @@ class RobotA1:
     def get_sensor_data(self):      # exposed as 'proxy.attr' writable
         self.robot.ReceiveObservation()  # need to call that function anytime before reading sensor
         self.motorTorques = self.robot.GetMotorTorques()
+        print(f"Motor torques : {self.motorTorques}")
         # Checks if the generated torque due ot the new action is withing safety ranges.
         # self.safety_check_torque()
         self.motor_angles = self.robot.GetMotorAngles()  # in [-\pi;+\pi]
         self.motor_angle_rates = self.robot.GetMotorVelocities()
+        print(f"Motor velocities : {self.motor_angle_rates}")
         self.rpy = np.array(self.robot.GetBaseRollPitchYaw())
         self.rpy_rate = self.robot.GetBaseRollPitchYawRate()
         self.com = self.robot.GetBasePosition()

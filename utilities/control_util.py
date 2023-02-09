@@ -26,6 +26,7 @@ if HOME.find('unitree')!=-1:  # adds the path to the local motion_imitation wrap
 from motion_imitation.robots import robot_config, a1
 
 from utilities.config import Config
+from utilities.motion_imitation_config import MotionImitationConfig
 from utilities.logging import Logger
 
 from motion_clips.motionClip import MotionClipParser, raisim_rotmat_to_quat
@@ -998,7 +999,7 @@ class Policy:
 class ImitationPolicy(Policy):
 
     # TODO download the config file of the training so you can set hyperparameters based on that
-    def __init__(self, args, folder=None):
+    def __init__(self, args, folder=None,ob_dim = 342 ):
         self.folder = folder
         if args.wandb:
             # Use wandb to download the model
@@ -1024,7 +1025,8 @@ class ImitationPolicy(Policy):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print("\nTorch device: ", self.device)
         # calculate i/o dimensions of the policy net.
-        self.ob_dim = 342
+        self.ob_dim = ob_dim
+        print(f"Input dimension of the policy : {self.ob_dim}")
         self.act_dim = 12
         self.architecture = [256, 256]
         # Load policy net.
@@ -1107,6 +1109,7 @@ class MotionImitationActionBridge(ActionBridge):
     def __init__(self, robot, leg_bounds):
         super().__init__(robot, leg_bounds)
         print(f"Leg bounds : {leg_bounds}")
+        self.mean = [-0.01, 0.75,-1.5,0.01, 0.75,-1.5,-0.01, 0.75,-1.5, 0.01, 0.75, -1.5]
 
     def adapt(self, action_policy):
         self.action_policy_buffer.append(copy.deepcopy(action_policy).flatten())
@@ -1130,16 +1133,39 @@ class MotionImitationActionBridge(ActionBridge):
                                                          a_max=self.leg_bounds["calf"][1])])
         return action
 
+    def set_mean(self, new_mean):
+        '''
+        Does not update the action mean as it is fixed to a nominal configuration for the non-residual based
+        policy.
+        :param new_mean:
+        :return:
+        '''
+        pass
+
     def add_mean(self, action):
-        mean = [-0.01, 0.75,-1.5,0.01, 0.75,-1.5,-0.01, 0.75,-1.5, 0.01, 0.75, -1.5]
-        return action + np.array(mean)
+        return action + np.array(self.mean)
 
     def filter(self, action):
         # TODO do an average filtering as soon as there are more than 2 action and then use a window of 5.
-        if len(self.action_buffer) >= Config.FILTER_WINDOW_LENGTH-1:
-            action += sum(self.action_buffer[-Config.FILTER_WINDOW_LENGTH+1:])
-            action /= Config.FILTER_WINDOW_LENGTH
+        if len(self.action_buffer) >= MotionImitationConfig.FILTER_WINDOW_LENGTH-1:
+            action += sum(self.action_buffer[-MotionImitationConfig.FILTER_WINDOW_LENGTH+1:])
+            action /= MotionImitationConfig.FILTER_WINDOW_LENGTH
         return action
+
+
+class MotionImitationResidualPolicyActionBridge(MotionImitationActionBridge):
+
+    def __init__(self, robot, leg_bounds):
+        super().__init__(robot, leg_bounds)
+
+    def set_mean(self, new_mean):
+        '''
+        Updates the new action for residual-based policy.
+        :param new_mean:
+        :return:
+        '''
+        self.mean = new_mean
+
 
 class RunningMeanStd(object):
     def __init__(self, epsilon=1e-4, shape=()):
@@ -1348,6 +1374,7 @@ class MotionImitationObservationParser(ObservationParser):
         self.motion_clip_folder =args.motion_clip_folder
         self.motion_clip_name = args.motion_clip_name
         self.get_motion_clip_data()
+        self.obs_window = None
 
     def get_motion_clip_data(self):
         self.motion_clip_parser.get_single_motion_clip(
@@ -1369,6 +1396,9 @@ class MotionImitationObservationParser(ObservationParser):
         print(f"Loaded obs means:{self.obs_rms.mean}")
         print(f"Loaded obs vars:{self.obs_rms.var}")
 
+    def set_obs_window(self, new_window):
+        self.obs_window = new_window
+
     def normalize(self, obs):
         """
         TODO in the tester in Raisim they use the mean and var data from the training, but what do I with the robot?
@@ -1387,7 +1417,7 @@ class MotionImitationObservationParser(ObservationParser):
         self.get_robot_data()
         # Gets the reference data
         self.get_reference_data(target_frame=target_frame,
-                                obs_window=[-1000,-500,-200,-20,20,200,500,1000])
+                                obs_window=self.obs_window)
         # Constitutes observations
         self.current_obs = np.concatenate((rel_info,
                                            self.robot_data,

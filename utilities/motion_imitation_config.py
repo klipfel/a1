@@ -18,5 +18,8 @@ class MotionImitationConfig:
     HIP_INDEX = range(0, 12, 3)
     THIGH_INDEX = range(1, 12, 3)
     CALF_INDEX = range(2, 12, 3)
-    FILTER_WINDOW_LENGTH = 2
+    FILTER_WINDOW_LENGTH = 3
     LEG_BOUNDS = {"hip": [-0.5, 0.5], "thigh": [-0.1, 1.5], "calf": [-2.1, -0.5]}
+    LEG_BOUNDS_RESIDUAL_POLICY = {"hip": [-0.4, 0.4], "thigh": [-0.6, 0.6], "calf": [-0.6, 0.6]}
+    OBS_WINDOW = [-1000,-500,-200,-20,20,200,500,1000]
+    OBS_WINDOW_RESIDUAL_POLICY = [-1000,-500,-200,-20,0,20,200,500,1000]
