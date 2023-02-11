@@ -31,6 +31,7 @@ parser.add_argument("-v", "--visualize", action='store_true', help='Activates th
 parser.add_argument("-nc", "--no_control", action='store_true', help='If flag is present the control command is not'
                                                                      'not sent to the Low-Level DC motors.')
 parser.add_argument("-hdw", "--hardware_mode", action='store_true', help='Hardware mode for control on the robot.')
+parser.add_argument("-ra", "--rack", action='store_true', help='Rack in sim.')
 parser.add_argument("-arp", "--action_repeat", help="Repeats the action applied on hardware.", type=int, default=1)
 args = parser.parse_args()
 
@@ -136,7 +137,7 @@ class RobotA1:
             p.setAdditionalSearchPath(pybullet_data.getDataPath())
             p.loadURDF("plane.urdf")
             robot = a1.A1(pybullet_client=p,
-                          on_rack=False,
+                          on_rack=args.rack,
                           action_repeat=args.action_repeat,
                           time_step=CONTROL_SIM_RATE,  # time step of the simulation
                           control_latency=CONTROL_LATENCY_SIM,
@@ -167,8 +168,9 @@ class RobotA1:
 
     @Pyro5.server.expose
     def get_sensor_data(self):      # exposed as 'proxy.attr' writable
+        # TODO they use pybind to do a bridge between robot sensor and the wrapper.
         self.robot.ReceiveObservation()  # need to call that function anytime before reading sensor
-        self.motorTorques = self.robot.GetMotorTorques()
+        self.motorTorques = self.robot.GetTrueMotorTorques()
         print(f"Motor torques : {self.motorTorques}")
         # Checks if the generated torque due ot the new action is withing safety ranges.
         # self.safety_check_torque()

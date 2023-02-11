@@ -45,6 +45,8 @@ class LaptopPolicy:
         parser.add_argument('--update', help='update number of the model to test', type=int, default=None)
         parser.add_argument("-obsn", "--obs_normalization", help="Normalize or not observations based on the data accumulated in Raisim.", action='store_true')
         parser.add_argument("--policy_type", help="Either residual or non-residual policy.", type=str, default='')
+        parser.add_argument("--ob_dim", help="Input dimension of the policy.", type=int, default='')
+        parser.add_argument("--rel_info", help="Adds relInfo to the start of observations.", action='store_true')
         args = parser.parse_args()
         self.args = args
         self.robot = self.get_robot()  # HERE IT IS THE URI OF THE OBJECT SO REMOTE
@@ -96,18 +98,19 @@ class LaptopPolicy:
         # self.ini_orn = self.ini_base_state[3:]
 
     def get_policy(self):
-        if self.args.policy_type == "no-res":
-            self.policy = ImitationPolicy(self.args, folder=self.test_data_folder, ob_dim=342)
-        elif self.args.policy_type == "res":
-            self.policy = ImitationPolicy(self.args, folder=self.test_data_folder, ob_dim=366)
-        else:
-            print("Unknow policy type. Please choose between res or non-res.")
-            sys.exit(1)
+        ob_dim = self.args.ob_dim
+        self.policy = ImitationPolicy(self.args, folder=self.test_data_folder, ob_dim=ob_dim)
 
     def get_obs_parser(self):
         self.obs_parser = HdwMotionImitationObservationParser(self.robot, self.args, self.policy,
                                                               motion_clip_parser=self.motion_clip_parser,
                                                               data_folder=self.test_data_folder)
+        # REl info in obs
+        if self.args.rel_info:
+            self.obs_parser.set_rel_info_flag(True)
+        else:
+            self.obs_parser.set_rel_info_flag(False)
+        # Filter window length
         if self.args.policy_type == "no-res":
             self.obs_parser.set_obs_window(MotionImitationConfig.OBS_WINDOW)
         elif self.args.policy_type == "res":
@@ -167,7 +170,7 @@ class LaptopPolicy:
         self.initial_joint_matching()
         # self.keep_initial_frame()
         # self.motion_clip_tracking()
-        # self.smooth_motion_clip_tracking()
+        self.smooth_motion_clip_tracking()
         self.write_data_to_csv()
 
     def get_sensor_data(self):
@@ -201,6 +204,7 @@ class LaptopPolicy:
             blend_ratio = np.minimum(t / (nsteps*alpha), 1)
             action = (1 - blend_ratio) * current_motor_angle + blend_ratio * target_jp
             self.send_action_to_robot(action)
+            self.get_sensor_data()
             time.sleep(dt)  # the example used 0.005.
         print(LINE)
 

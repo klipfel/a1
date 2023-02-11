@@ -999,7 +999,7 @@ class Policy:
 class ImitationPolicy(Policy):
 
     # TODO download the config file of the training so you can set hyperparameters based on that
-    def __init__(self, args, folder=None,ob_dim = 342 ):
+    def __init__(self, args, folder=None, ob_dim = 342 ):
         self.folder = folder
         if args.wandb:
             # Use wandb to download the model
@@ -1041,7 +1041,7 @@ class ImitationPolicy(Policy):
         with torch.inference_mode():
             action_ll = self.loaded_graph.architecture(torch.from_numpy(obs).cpu())
             action_np = action_ll.cpu().detach().numpy()
-            action_ll = np.array(action_ll, dtype=np.float64)
+            action_ll = np.array(action_ll.flatten(), dtype=np.float64)
             action_np = np.array(action_np, dtype=np.float64)
         action_np = action_np * np.array(std)
         self.action_ll = action_ll
@@ -1157,6 +1157,21 @@ class MotionImitationResidualPolicyActionBridge(MotionImitationActionBridge):
 
     def __init__(self, robot, leg_bounds):
         super().__init__(robot, leg_bounds)
+
+    def adapt(self, action_policy):
+        '''
+        The mean is added after filtering and clipoing in the residual policy.
+        :param action_policy:
+        :return:
+        '''
+        self.action_policy_buffer.append(copy.deepcopy(action_policy).flatten())
+        action = copy.deepcopy(action_policy)
+        action = self.clip(action)
+        action = self.filter(action)
+        action = self.clip(action)
+        action = self.add_mean(action)
+        self.action_buffer.append(copy.deepcopy(action).flatten())
+        return action
 
     def set_mean(self, new_mean):
         '''
@@ -1375,12 +1390,16 @@ class MotionImitationObservationParser(ObservationParser):
         self.motion_clip_name = args.motion_clip_name
         self.get_motion_clip_data()
         self.obs_window = None
+        self.rel_info = True
 
     def get_motion_clip_data(self):
         self.motion_clip_parser.get_single_motion_clip(
             folder=self.motion_clip_folder,
             interp_file_name=self.motion_clip_name
         )
+
+    def set_rel_info_flag(self, rel_info_flag):
+        self.rel_info = rel_info_flag
 
     def load_scaling(self, dir_name, iteration, count=1e5):
         print(f"Observation normalization activated .... loading scaling var and mean from {dir_name}")
@@ -1419,10 +1438,15 @@ class MotionImitationObservationParser(ObservationParser):
         self.get_reference_data(target_frame=target_frame,
                                 obs_window=self.obs_window)
         # Constitutes observations
-        self.current_obs = np.concatenate((rel_info,
-                                           self.robot_data,
-                                           self.reference_data),
-                                           axis=None)
+        if self.rel_info:
+            self.current_obs = np.concatenate((rel_info,
+                                               self.robot_data,
+                                               self.reference_data),
+                                               axis=None)
+        else:
+            self.current_obs = np.concatenate((self.robot_data,
+                                               self.reference_data),
+                                               axis=None)
         # float32 for pytorch.
         self.obs = np.array([list(self.current_obs)], dtype=np.float64)
         # Put observations array in one row for policy.
@@ -1433,9 +1457,9 @@ class MotionImitationObservationParser(ObservationParser):
         if self.args.obs_normalization:
             self.obsn = self.normalize(copy.deepcopy(self.obs))
             self.obsn_buffer.append(self.obsn.flatten())  # flatten for logging.
-            self.obsn = np.array(self.obsn, dtype=np.float32)
+            self.obsn = np.array(list(self.obsn), dtype=np.float32)
             return self.obsn
-        self.obs = np.array([list(self.obs)], dtype=np.float32)
+        self.obs = np.array(list(self.obs), dtype=np.float32)
         return self.obs
 
     def get_robot_data(self):
