@@ -133,9 +133,11 @@ class RobotA1:
             p.setPhysicsEngineParameter(numSolverIterations=30)
             p.setTimeStep(CONTROL_SIM_RATE)
             p.setGravity(0, 0, -9.8)
-            p.setPhysicsEngineParameter(enableConeFriction=0)
+            p.setPhysicsEngineParameter(enableConeFriction=1)
             p.setAdditionalSearchPath(pybullet_data.getDataPath())
-            p.loadURDF("plane.urdf")
+            self.floor = p.loadURDF("plane.urdf")
+            self.setFloorFrictions(pybullet_client=p,
+                                   lateral=0.6)
             robot = a1.A1(pybullet_client=p,
                           on_rack=args.rack,
                           action_repeat=args.action_repeat,
@@ -143,6 +145,7 @@ class RobotA1:
                           control_latency=CONTROL_LATENCY_SIM,
                           enable_action_interpolation=True,
                           enable_action_filter=False)
+            # p.changeDynamics(robot.quadruped, -1, lateralFriction=1.0)
             # robot.SetBaseMasses([10.0])
             motor_kps = np.array([args.kp] * 12)
             motor_kds = np.array([args.kd] * 12)
@@ -165,6 +168,39 @@ class RobotA1:
         self.actions = []
         self.torque_over_bound = False
         self.crazy_motor_velocity_over_bound = None
+        self.ref_initial_base_orientation = None
+        self.ref_initial_base_position = None
+        self.pybullet_client = p
+        self.robot = robot
+
+    @Pyro5.server.expose
+    def get_and_set_initial_reference_base_state(self, ini_position, ini_orn):
+        '''
+        Gets the initial reference base state for motion matching in simulation.
+        ini_position: is a list as well as ini_orn
+        :return:
+        '''
+        self.ref_initial_base_orientation = np.array(ini_orn)
+        self.ref_initial_base_position = np.array(ini_position)
+        self.set_initial_reference_base_state(self.pybullet_client,
+                                              self.robot.quadruped)
+
+    def set_initial_reference_base_state(self, pybullet_client, phys_model):
+        pybullet_client.resetBasePositionAndOrientation(phys_model,
+                                                        self.ref_initial_base_position,
+                                                        self.ref_initial_base_orientation)
+
+    def setFloorFrictions(self, pybullet_client, lateral=1, spinning=-1, rolling=-1):
+            """Sets the frictions with the plane object
+
+            Keyword Arguments:
+                lateral {float} -- lateral friction (default: {1.0})
+                spinning {float} -- spinning friction (default: {-1.0})
+                rolling {float} -- rolling friction (default: {-1.0})
+            """
+            if self.floor is not None:
+                pybullet_client.changeDynamics(self.floor, -1, lateralFriction=lateral,
+                                spinningFriction=spinning, rollingFriction=rolling)
 
     @Pyro5.server.expose
     def get_sensor_data(self):      # exposed as 'proxy.attr' writable

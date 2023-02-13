@@ -106,7 +106,8 @@ class ControlFramework:
         parser.add_argument('--obs_mode', help='update number of the model to test', type=int, default=1)
         parser.add_argument("--no_control", help='If flag is present the actions of the policy are inferred but the robot is not controlled, '
                                                  'the actions are not applied..', action='store_true')
-
+        parser.add_argument("--hdw_com_issue", help="Adds a fixed Com observation [0.012731, 0.002186, 1.000515]"
+                                                    "like what is cimputed on the hdw to simulate ir.", action='store_true')
         # Folder where the test data will be saved
         date = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         self.test_data_folder = Config.LOGDIR + "/" + date
@@ -1495,6 +1496,32 @@ class MotionImitationObservationParser(ObservationParser):
         # self.reference_data = np.zeros((1, 24*8))
         self.reference_data = np.array(reference_data_in_obs)
 
+    def disturb_obs(self, obs, com_flag=False):
+        '''
+        Disturbs observations to simulate real experiments.
+        :param obs:
+        :param com_flag:
+        :return:
+        '''
+        obs_cp = obs.copy()
+        if com_flag:
+            obs_cp = self.fix_com(obs_cp)
+        return obs_cp
+
+    def fix_com(self, obs, com_value=[0.012731, 0.002186, 1.000515]):
+        '''
+        Sets the robot Com to a fixed value. This is simulating the behavior that is on hdw where
+        no Com estimate is returned and is then fixed as a constant.
+        :param obs:
+        :param com_value: found in hdw experiments
+        :return:
+        '''
+        obs_cp = obs.copy()
+        obs_cp[0] = com_value[0]
+        obs_cp[1] = com_value[1]
+        obs_cp[2] = com_value[2]
+        return obs_cp
+
 
 class HdwMotionImitationObservationParser(MotionImitationObservationParser):
     '''
@@ -1509,4 +1536,6 @@ class HdwMotionImitationObservationParser(MotionImitationObservationParser):
     def get_robot_data(self):
         sensor_data_list = self.robot.get_sensor_data()
         sensor_data_np = np.array(sensor_data_list, dtype=np.float32)
+        sensor_data_np = self.disturb_obs(obs=sensor_data_np,
+                         com_flag=self.args.hdw_com_issue)
         self.robot_data = sensor_data_np

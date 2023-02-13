@@ -47,6 +47,10 @@ class LaptopPolicy:
         parser.add_argument("--policy_type", help="Either residual or non-residual policy.", type=str, default='')
         parser.add_argument("--ob_dim", help="Input dimension of the policy.", type=int, default='')
         parser.add_argument("--rel_info", help="Adds relInfo to the start of observations.", action='store_true')
+        parser.add_argument("--base_state_matching", help="Matches initial base state with the reference, only in sim.",
+                            action='store_true')
+        parser.add_argument("--hdw_com_issue", help="Adds a fixed Com observation [0.012731, 0.002186, 1.000515]"
+                                                    "like what is cimputed on the hdw to simulate ir.", action='store_true')
         args = parser.parse_args()
         self.args = args
         self.robot = self.get_robot()  # HERE IT IS THE URI OF THE OBJECT SO REMOTE
@@ -168,14 +172,24 @@ class LaptopPolicy:
         self.get_obs_parser()
         self.get_action_bridge()
         self.initial_joint_matching()
+        if self.args.base_state_matching:
+            self.base_state_matching()
         # self.keep_initial_frame()
         # self.motion_clip_tracking()
         self.smooth_motion_clip_tracking()
         self.write_data_to_csv()
 
+    def base_state_matching(self):
+        print("/!\ WARNING: base state matching activated, only possible in simulation.")
+        ini_position = self.motion_clip_parser.motion_clip["Interp_Motion_Data"][0][:3]
+        ini_orn = self.motion_clip_parser.motion_clip["Interp_Motion_Data"][0][3:3+4]
+        self.robot.get_and_set_initial_reference_base_state(ini_position=ini_position.tolist(),
+                                                    ini_orn=ini_orn.tolist())
+
+
     def get_sensor_data(self):
         self.most_recent_robot_sensor_data = self.robot.get_sensor_data()
-        print(f"Sensor data: {self.most_recent_robot_sensor_data}")
+        print(f"Sensor data/COM: {self.most_recent_robot_sensor_data[:3]}")
 
     def get_robot_joint_postions(self):
         '''
@@ -319,8 +333,8 @@ class LaptopPolicy:
                                 dt=self.motion_clip_frame_rate)
             delta = time.time() - t0
             print(f"Control time: {delta}")
-            # dframe = int(delta/REF_FRAME_RATE) + 1
-            dframe = 20
+            dframe = int(delta/REF_FRAME_RATE) + 1
+            # dframe = 20
             frame += dframe
             # save data
             self.save_data(obs=obs_np,
