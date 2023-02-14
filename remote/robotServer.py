@@ -137,7 +137,7 @@ class RobotA1:
             p.setAdditionalSearchPath(pybullet_data.getDataPath())
             self.floor = p.loadURDF("plane.urdf")
             self.setFloorFrictions(pybullet_client=p,
-                                   lateral=0.6)
+                                   lateral=0.7)
             robot = a1.A1(pybullet_client=p,
                           on_rack=args.rack,
                           action_repeat=args.action_repeat,

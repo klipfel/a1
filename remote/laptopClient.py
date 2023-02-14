@@ -51,6 +51,9 @@ class LaptopPolicy:
                             action='store_true')
         parser.add_argument("--hdw_com_issue", help="Adds a fixed Com observation [0.012731, 0.002186, 1.000515]"
                                                     "like what is cimputed on the hdw to simulate ir.", action='store_true')
+        parser.add_argument("--remove_robot_com_in_obs", help="Flag to remove robot CoM in observations",
+                            action='store_true')
+        parser.add_argument('--filter_window', help='Window of action filter.', type=int, default=2)
         args = parser.parse_args()
         self.args = args
         self.robot = self.get_robot()  # HERE IT IS THE URI OF THE OBJECT SO REMOTE
@@ -73,6 +76,8 @@ class LaptopPolicy:
         self.control_time = 0.02 # in seconds
         self.ini_conf = None
         self.most_recent_robot_sensor_data = None
+        # Filter window setting
+        MotionImitationConfig.FILTER_WINDOW_LENGTH = args.filter_window
 
     def get_robot(self):
         '''

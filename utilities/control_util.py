@@ -104,6 +104,7 @@ class ControlFramework:
         parser.add_argument('--motion_clip_name', help='Name of the motion clip interpolation file.', type=str, default='')
         parser.add_argument('--imitation_policy', help='Activates the imitation policy.', action='store_true')
         parser.add_argument('--obs_mode', help='update number of the model to test', type=int, default=1)
+        parser.add_argument('--filter_window', help='Window of action filter.', type=int, default=2)
         parser.add_argument("--no_control", help='If flag is present the actions of the policy are inferred but the robot is not controlled, '
                                                  'the actions are not applied..', action='store_true')
         parser.add_argument("--hdw_com_issue", help="Adds a fixed Com observation [0.012731, 0.002186, 1.000515]"
@@ -1522,6 +1523,24 @@ class MotionImitationObservationParser(ObservationParser):
         obs_cp[2] = com_value[2]
         return obs_cp
 
+    def adapt_observations(self, obs):
+        '''
+        Function that adapts observations based on some speicifed flags for different policies compatibility.
+        :return:
+        '''
+        o = obs.copy()
+        if self.args.remove_robot_com_in_obs:
+            o = self.remove_robot_com_in_obs(o)
+        return o
+
+    def remove_robot_com_in_obs(self, obs):
+        ''''
+        Removes the robot COM measured on the robot, supposes it is at the start of the obs or sensor data
+        '''
+        o = obs.copy()
+        o = o[3:]
+        return o
+
 
 class HdwMotionImitationObservationParser(MotionImitationObservationParser):
     '''
@@ -1538,4 +1557,5 @@ class HdwMotionImitationObservationParser(MotionImitationObservationParser):
         sensor_data_np = np.array(sensor_data_list, dtype=np.float32)
         sensor_data_np = self.disturb_obs(obs=sensor_data_np,
                          com_flag=self.args.hdw_com_issue)
+        sensor_data_np = self.adapt_observations(obs=sensor_data_np)
         self.robot_data = sensor_data_np
