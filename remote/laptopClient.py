@@ -21,7 +21,7 @@ from utilities.motion_imitation_config import MotionImitationConfig
 # TODO not complete, I actually don't need this code.
 
 LINE = "-"*100
-CONTROL_SIM_RATE = 0.001 # 0.0001 # sim 0.001
+CONTROL_SIM_RATE = 0.0000 # 0.0001 # sim 0.001
 REF_FRAME_RATE = 0.001
 
 def create_tmp_data_folder():
@@ -338,8 +338,8 @@ class LaptopPolicy:
                                 dt=self.motion_clip_frame_rate)
             delta = time.time() - t0
             print(f"Control time: {delta}")
-            dframe = int(delta/REF_FRAME_RATE) + 1
-            # dframe = 20
+            # dframe = int(delta/REF_FRAME_RATE) + 1
+            dframe = 10
             frame += dframe
             # save data
             self.save_data(obs=obs_np,
