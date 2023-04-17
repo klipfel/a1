@@ -1,5 +1,7 @@
 # TODO write an exception in case the robot server crashes, i.e. save data
 # saved as greeting-client.py
+import copy
+
 import Pyro5.api
 import config
 import numpy as np
@@ -38,6 +40,7 @@ class LaptopPolicy:
     def __init__(self):
         parser = argparse.ArgumentParser()
         parser.add_argument("-u", "--uri", help="URI of the proxy of the Policy object", type=str, default=None)
+        parser.add_argument("-mu", "--mocap_uri", help="URI of the proxy of the mocap system object", type=str, default=None)
         parser.add_argument('--motion_clip_folder', help='path of the motion clip folder', type=str, default='')
         parser.add_argument('--motion_clip_name', help='Name of the motion clip interpolation file.', type=str, default='')
         parser.add_argument("--wandb", help='If present as an arg the model will be downloaded from wandb directly.', action='store_true')
@@ -47,6 +50,7 @@ class LaptopPolicy:
         parser.add_argument("--policy_type", help="Either residual or non-residual policy.", type=str, default='')
         parser.add_argument("--ob_dim", help="Input dimension of the policy.", type=int, default='')
         parser.add_argument("--rel_info", help="Adds relInfo to the start of observations.", action='store_true')
+        parser.add_argument("--use_mocap", help="Flag to use the mocap lab in the policy observations.", action='store_true')
         parser.add_argument("--base_state_matching", help="Matches initial base state with the reference, only in sim.",
                             action='store_true')
         parser.add_argument("--hdw_com_issue", help="Adds a fixed Com observation [0.012731, 0.002186, 1.000515]"
@@ -57,6 +61,7 @@ class LaptopPolicy:
         args = parser.parse_args()
         self.args = args
         self.robot = self.get_robot()  # HERE IT IS THE URI OF THE OBJECT SO REMOTE
+        self.mocap_system = self.get_mocap_system()
         self.test_data_folder = create_tmp_data_folder()
         self.motion_clip_parser = None
         self.motion_clip_folder = args.motion_clip_folder
@@ -67,6 +72,7 @@ class LaptopPolicy:
         self.action_bridge = None
         self.leg_bounds = None
         self.uri = None
+        self.mocap_system_uri = None
         self.data = {"obs": [],
                      "action_np": [],
                      "action_robot": [],
@@ -92,6 +98,21 @@ class LaptopPolicy:
         robot._pyroSerializer = "marshal"  # faster communication.
         robot._pyroTimeout = 1.5    # 1.5 seconds
         return robot
+
+
+    def get_mocap_system(self):
+        '''
+        gets the remote robot object class.
+        :return:
+        '''
+        # robot = Pyro5.api.Proxy(self.args.uri)     # get a Pyro proxy to the greeting object
+        self.mocap_system_uri = input("ENTER THE MOCAP SYSTEM URI AND PRESS ENTER .... "
+                         "for example PYRO:obj_fb3e9bf61d3248e0ae5f9c421ae7c5f2@127.0.0.1:2020.\n")
+        mocap_system = Pyro5.api.Proxy(self.mocap_system_uri)
+        mocap_system._pyroBind()
+        mocap_system._pyroSerializer = "marshal"  # faster communication.
+        mocap_system._pyroTimeout = 1.5    # 1.5 seconds
+        return mocap_system
 
     def get_motion_clip_parser(self):
         self.motion_clip_parser = MotionClipParser(data_folder=self.test_data_folder)
@@ -194,7 +215,7 @@ class LaptopPolicy:
 
     def get_sensor_data(self):
         self.most_recent_robot_sensor_data = self.robot.get_sensor_data()
-        print(f"Sensor data/COM: {self.most_recent_robot_sensor_data[:3]}")
+        #sprint(f"Sensor data/COM: {self.most_recent_robot_sensor_data[:3]}")
 
     def get_robot_joint_postions(self):
         '''
@@ -327,6 +348,13 @@ class LaptopPolicy:
             # Inference loop.
             t0 = time.time()
             obs_np = self.obs_parser.observe(target_frame=frame)  # REMOTE
+            # Mocap lab
+            if self.args.use_mocap:
+                # Gets the data from the mocap system
+                mocap_sys_data = self.mocap_system.get_data()
+                mocap_sys_data = np.array(mocap_sys_data[0]).reshape((1,-1))# removes first dimension
+                print(f"Mocap system data: {mocap_sys_data}")
+                obs_np = self.update_obs_with_mocap_data(obs_np, mocap_sys_data)
             # print(f"SENSOR DATA at time = {t0}:{self.obs_parser.robot_data}")
             action_np = self.policy.inference(obs_np,  std=[0.1,0.3,0.3]*4)
             self.action_bridge.set_mean(new_mean=list(self.motion_clip_parser.motion_clip["Interp_Motion_Data"][frame][-12:]))
@@ -346,6 +374,16 @@ class LaptopPolicy:
                            action_np=action_np,
                            action_robot=action_robot,
                            control_time=delta)
+
+    def update_obs_with_mocap_data(self, obs_np, mocap_sys_data):
+        # Adds the mocap information to the policy observations
+        obs = copy.deepcopy(obs_np)
+        # CoM
+        obs[:, :3] = mocap_sys_data[:, :3]
+        # Rotation Matrix of the robot, 9 coefficients afyer CoM, and jp.
+        obs[:, 3+12:3+12+9] = mocap_sys_data[:, 3:3+9]
+        # TODO I am not using the occlusion flag at the end of the mocap stream for now
+        return obs
 
 
 # Client loop.
