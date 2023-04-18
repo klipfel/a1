@@ -61,7 +61,8 @@ class LaptopPolicy:
         args = parser.parse_args()
         self.args = args
         self.robot = self.get_robot()  # HERE IT IS THE URI OF THE OBJECT SO REMOTE
-        self.mocap_system = self.get_mocap_system()
+        if args.use_mocap:
+            self.mocap_system = self.get_mocap_system()
         self.test_data_folder = create_tmp_data_folder()
         self.motion_clip_parser = None
         self.motion_clip_folder = args.motion_clip_folder
@@ -362,12 +363,12 @@ class LaptopPolicy:
             # TODO do the control dilution on the robotServer to save communication times
             self.smooth_control(starting_motor_angles=self.obs_parser.robot_data[3:3+12],
                                 target_jp=action_robot,
-                                nsteps=20,
+                                nsteps=10,
                                 dt=self.motion_clip_frame_rate)
             delta = time.time() - t0
             print(f"Control time: {delta}")
-            # dframe = int(delta/REF_FRAME_RATE) + 1
-            dframe = 10
+            dframe = int(delta/REF_FRAME_RATE) + 1
+            # dframe = 10
             frame += dframe
             # save data
             self.save_data(obs=obs_np,

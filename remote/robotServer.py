@@ -22,6 +22,8 @@ Single file to run on the robot.
     3. Apply the command to the HDW.
 '''
 parser = argparse.ArgumentParser()
+parser.add_argument("--kd_list", help='Derivative gain list.', nargs='+', type=float)
+parser.add_argument("--kp_list", help='Proportional gain list.', nargs='+', type=float)
 parser.add_argument("--kp", help='Proportional gain.', type=float, default=50.0)
 parser.add_argument("--kd", help='Derivative gain.', type=float, default=2.0)
 parser.add_argument("--ip_host", help='Host ip address, where the Pyro deamon will be called and where the name server'
@@ -97,6 +99,7 @@ def create_tmp_data_folder():
 class RobotA1:
 
     def __init__(self):
+        self.args = args
         self.folder_data = create_tmp_data_folder()
         if args.hardware_mode:
             # run on hardware.
@@ -111,13 +114,6 @@ class RobotA1:
                 control_latency=0.0,
                 reset_time=-1  # prevents issues during resetting
             )
-            motor_kps = np.array([args.kp] * 12)
-            motor_kds = np.array([args.kd] * 12)
-            robot.SetMotorGains(motor_kps, motor_kds)
-            gains = robot.GetMotorGains()
-            print(f"Robot gains: ", gains)
-            print("Robot Kps: ", robot.motor_kps)
-            print("Robot Kds: ", robot.motor_kds)
         else:
             if args.visualize:
                 p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
@@ -147,17 +143,10 @@ class RobotA1:
                           enable_action_filter=False)
             # p.changeDynamics(robot.quadruped, -1, lateralFriction=1.0)
             # robot.SetBaseMasses([10.0])
-            motor_kps = np.array([args.kp] * 12)
-            motor_kds = np.array([args.kd] * 12)
-            robot.SetMotorGains(motor_kps, motor_kds)
-            gains = robot.GetMotorGains()
-            print("Robot Kps:", gains[0])
-            print("Robot Kds:", gains[1])
             if args.visualize:
                 p.configureDebugVisualizer(p.COV_ENABLE_RENDERING,1)
         # Class attribute
         self.robot = robot
-        self.args = args
         self.pybullet_client = p
         # sensor data dict
         self.sensor_data = {}
@@ -172,6 +161,21 @@ class RobotA1:
         self.ref_initial_base_position = None
         self.pybullet_client = p
         self.robot = robot
+        # sets the robot gains
+        self.set_gains()
+
+    def set_gains(self):
+        motor_kps = np.array([args.kp] * 12)
+        motor_kds = np.array([args.kd] * 12)
+        if len(args.kp_list) == 12 and len(args.kd_list) == 12:
+            motor_kps = np.array(args.kp_list)
+            motor_kds = np.array(args.kd_list)
+        self.robot.SetMotorGains(motor_kps, motor_kds)
+        gains = self.robot.GetMotorGains()
+        print(f"Robot gains: ", gains)
+        if self.args.hardware_mode:
+            print("Robot Kps: ", self.robot.motor_kps)
+            print("Robot Kds: ", self.robot.motor_kds)
 
     @Pyro5.server.expose
     def get_and_set_initial_reference_base_state(self, ini_position, ini_orn):
