@@ -363,7 +363,7 @@ class LaptopPolicy:
             # TODO do the control dilution on the robotServer to save communication times
             self.smooth_control(starting_motor_angles=self.obs_parser.robot_data[3:3+12],
                                 target_jp=action_robot,
-                                nsteps=10,
+                                nsteps=20,
                                 dt=self.motion_clip_frame_rate)
             delta = time.time() - t0
             print(f"Control time: {delta}")
