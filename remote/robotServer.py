@@ -167,7 +167,8 @@ class RobotA1:
     def set_gains(self):
         motor_kps = np.array([args.kp] * 12)
         motor_kds = np.array([args.kd] * 12)
-        if len(args.kp_list) == 12 and len(args.kd_list) == 12:
+        if args.kp_list is not None and args.kd_list is not None:
+            assert(len(args.kp_list) == 12 and len(args.kd_list) == 12)
             motor_kps = np.array(args.kp_list)
             motor_kds = np.array(args.kd_list)
         self.robot.SetMotorGains(motor_kps, motor_kds)

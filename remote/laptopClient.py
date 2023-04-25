@@ -8,6 +8,7 @@ import numpy as np
 import time
 import argparse
 import os, sys
+import pandas as pd
 
 import self as self
 import tqdm
@@ -23,8 +24,9 @@ from utilities.motion_imitation_config import MotionImitationConfig
 # TODO not complete, I actually don't need this code.
 
 LINE = "-"*100
-CONTROL_SIM_RATE = 0.0000 # 0.0001 # sim 0.001
+CONTROL_SIM_RATE = 0.00 # 0.0001 # sim 0.001
 REF_FRAME_RATE = 0.001
+
 
 def create_tmp_data_folder():
     # Folder where the test data will be saved
@@ -44,6 +46,8 @@ class LaptopPolicy:
         parser.add_argument('--motion_clip_folder', help='path of the motion clip folder', type=str, default='')
         parser.add_argument('--motion_clip_name', help='Name of the motion clip interpolation file.', type=str, default='')
         parser.add_argument("--wandb", help='If present as an arg the model will be downloaded from wandb directly.', action='store_true')
+        parser.add_argument("--obs_filtering", help='If present as an arg observations will be filtered.', action='store_true')
+        parser.add_argument("--leg_control", help='Control mode to control only one leg.', action='store_true')
         parser.add_argument('--run_path', help='wandb run path entity/project/run_id.', type=str, default='')
         parser.add_argument('--update', help='update number of the model to test', type=int, default=None)
         parser.add_argument("-obsn", "--obs_normalization", help="Normalize or not observations based on the data accumulated in Raisim.", action='store_true')
@@ -57,7 +61,7 @@ class LaptopPolicy:
                                                     "like what is cimputed on the hdw to simulate ir.", action='store_true')
         parser.add_argument("--remove_robot_com_in_obs", help="Flag to remove robot CoM in observations",
                             action='store_true')
-        parser.add_argument('--filter_window', help='Window of action filter.', type=int, default=2)
+        parser.add_argument('--filter_window', help='Window of action filter.', type=int, default=3)
         args = parser.parse_args()
         self.args = args
         self.robot = self.get_robot()  # HERE IT IS THE URI OF THE OBJECT SO REMOTE
@@ -77,7 +81,8 @@ class LaptopPolicy:
         self.data = {"obs": [],
                      "action_np": [],
                      "action_robot": [],
-                     "control_times": []
+                     "control_times": [],
+                     "mocap_sys_data": []
                      }
         self.motion_clip_frame_rate = CONTROL_SIM_RATE # in seconds
         self.control_time = 0.02 # in seconds
@@ -180,11 +185,12 @@ class LaptopPolicy:
             delta = time.time() - t0
             print(f"Time of inference: {delta}")
 
-    def save_data(self, obs, action_np, action_robot, control_time):
+    def save_data(self, obs, action_np, action_robot, control_time, mocap_sys_data):
         self.data["obs"].append(list(obs.flatten()))
         self.data["action_np"].append(list(action_np.flatten()))
         self.data["action_robot"].append(list(action_robot.flatten()))
         self.data["control_times"].append(control_time)
+        self.data["mocap_sys_data"].append(list(mocap_sys_data.flatten()))
 
     def write_data_to_csv(self):
         folder = f"{self.test_data_folder}/imitation_controller-{datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}"
@@ -204,7 +210,6 @@ class LaptopPolicy:
         # self.keep_initial_frame()
         # self.motion_clip_tracking()
         self.smooth_motion_clip_tracking()
-        self.write_data_to_csv()
 
     def base_state_matching(self):
         print("/!\ WARNING: base state matching activated, only possible in simulation.")
@@ -216,7 +221,8 @@ class LaptopPolicy:
 
     def get_sensor_data(self):
         self.most_recent_robot_sensor_data = self.robot.get_sensor_data()
-        #sprint(f"Sensor data/COM: {self.most_recent_robot_sensor_data[:3]}")
+        print(f"Sensor data/COM: {self.most_recent_robot_sensor_data[:3]}")
+        print(f"Sensor data/Rotation matrix: {self.most_recent_robot_sensor_data[3+12:3+12+9]}")
 
     def get_robot_joint_postions(self):
         '''
@@ -260,6 +266,8 @@ class LaptopPolicy:
         for t in range(nsteps):
             blend_ratio = np.minimum(t / (nsteps), 1)
             action = (1 - blend_ratio) * starting_motor_angles + blend_ratio * target_jp
+            if self.args.leg_control:
+                action[3:] = 0
             self.send_action_to_robot(action)
             time.sleep(dt)  # the example used 0.005.
 
@@ -345,7 +353,8 @@ class LaptopPolicy:
         '''
         #input("PROCEED TO MOTION CLIP TRACKING ON HDW?")
         frame = 0
-        while frame < self.motion_clip_parser.motion_clip_sim_frames:
+        #for _ in range(100):
+        while frame < 0.1*self.motion_clip_parser.motion_clip_sim_frames:
             # Inference loop.
             t0 = time.time()
             obs_np = self.obs_parser.observe(target_frame=frame)  # REMOTE
@@ -356,6 +365,11 @@ class LaptopPolicy:
                 mocap_sys_data = np.array(mocap_sys_data[0]).reshape((1,-1))# removes first dimension
                 print(f"Mocap system data: {mocap_sys_data}")
                 obs_np = self.update_obs_with_mocap_data(obs_np, mocap_sys_data)
+            else:
+                mocap_sys_data = np.array([0])
+            # filtering observation
+            if self.args.obs_filtering:
+                obs_np = self.filter_obs(obs_np)
             # print(f"SENSOR DATA at time = {t0}:{self.obs_parser.robot_data}")
             action_np = self.policy.inference(obs_np,  std=[0.1,0.3,0.3]*4)
             self.action_bridge.set_mean(new_mean=list(self.motion_clip_parser.motion_clip["Interp_Motion_Data"][frame][-12:]))
@@ -364,17 +378,19 @@ class LaptopPolicy:
             self.smooth_control(starting_motor_angles=self.obs_parser.robot_data[3:3+12],
                                 target_jp=action_robot,
                                 nsteps=20,
-                                dt=self.motion_clip_frame_rate)
+                                dt=0.003)
             delta = time.time() - t0
             print(f"Control time: {delta}")
-            dframe = int(delta/REF_FRAME_RATE) + 1
-            # dframe = 10
+            # dframe = int(delta/REF_FRAME_RATE) + 1
+            dframe = 20
+            # dframe = 10 # try to make it like in sim
             frame += dframe
             # save data
             self.save_data(obs=obs_np,
                            action_np=action_np,
                            action_robot=action_robot,
-                           control_time=delta)
+                           control_time=delta,
+                           mocap_sys_data=mocap_sys_data)
 
     def update_obs_with_mocap_data(self, obs_np, mocap_sys_data):
         # Adds the mocap information to the policy observations
@@ -386,10 +402,19 @@ class LaptopPolicy:
         # TODO I am not using the occlusion flag at the end of the mocap stream for now
         return obs
 
+    def filter_obs(self, obs):
+        filter_obs = copy.deepcopy(obs)
+        if len(self.data["obs"]) > 0:
+            filter_obs = (obs + np.array(self.data["obs"][-1]))/2.0
+        return filter_obs
+
 
 # Client loop.
 if __name__ == "__main__":
     input("PRESS ENTER IF YOU WANT TO START THE LAPTOP SERVER ....")
     policy = LaptopPolicy()
-    while True:
+    try:
         policy.inference_loop()
+    except Exception as e:
+        print(f"Exception : {e}")
+        policy.write_data_to_csv()
