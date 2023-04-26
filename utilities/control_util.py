@@ -1001,7 +1001,7 @@ class Policy:
 class ImitationPolicy(Policy):
 
     # TODO download the config file of the training so you can set hyperparameters based on that
-    def __init__(self, args, folder=None, ob_dim = 342 ):
+    def __init__(self, args, folder=None, ob_dim = 342, activation_fn_name = "LeakuReLU"):
         self.folder = folder
         if args.wandb:
             # Use wandb to download the model
@@ -1032,7 +1032,18 @@ class ImitationPolicy(Policy):
         self.act_dim = 12
         self.architecture = [256, 256]
         # Load policy net.
-        self.loaded_graph = raisim_module.MLP(self.architecture, nn.LeakyReLU, self.ob_dim, self.act_dim)
+        if activation_fn_name == "Tanh":
+            activation_fn = nn.Tanh
+        elif activation_fn_name == "ReLU":
+            activation_fn = nn.ReLU
+        elif activation_fn_name == "LeakyReLU":
+            activation_fn = nn.LeakyReLU
+        elif activation_fn_name == "ELU":
+            activation_fn = nn.ELU
+        else:
+            print(f"Unkown activation function: {activation_fn_name}.")
+            sys.exit()  
+        self.loaded_graph = raisim_module.MLP(self.architecture, activation_fn, self.ob_dim, self.act_dim)
         self.loaded_graph.load_state_dict(torch.load(self.weight_path, map_location=self.device)["actor_architecture_state_dict"])
         print(self.loaded_graph)
         # Actions
@@ -1430,7 +1441,7 @@ class MotionImitationObservationParser(ObservationParser):
         # print(f"MEAN: {self.obs_rms.mean}/VAR:{self.obs_rms.var}")
         return (obs - self.obs_rms.mean) / np.sqrt(self.obs_rms.var + 1e-8)
 
-    def observe(self, target_frame=0):
+    def observe(self, target_frame=0, action_history=None):
         # Rel ino
         # Remove rel info
         rel_info = np.zeros((1, 36*3))
@@ -1448,6 +1459,11 @@ class MotionImitationObservationParser(ObservationParser):
         else:
             self.current_obs = np.concatenate((self.robot_data,
                                                self.reference_data),
+                                               axis=None)
+        # Adds the action history to the observation    
+        if action_history is not None:
+            self.current_obs = np.concatenate((self.current_obs,
+                                               action_history),
                                                axis=None)
         # float32 for pytorch.
         self.obs = np.array([list(self.current_obs)], dtype=np.float64)

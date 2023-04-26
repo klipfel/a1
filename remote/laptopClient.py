@@ -24,7 +24,7 @@ from utilities.motion_imitation_config import MotionImitationConfig
 # TODO not complete, I actually don't need this code.
 
 LINE = "-"*100
-CONTROL_SIM_RATE = 0.00 # 0.0001 # sim 0.001
+CONTROL_SIM_RATE = 0.001 # 0.0001 # sim 0.001
 REF_FRAME_RATE = 0.001
 
 
@@ -43,6 +43,7 @@ class LaptopPolicy:
         parser = argparse.ArgumentParser()
         parser.add_argument("-u", "--uri", help="URI of the proxy of the Policy object", type=str, default=None)
         parser.add_argument("-mu", "--mocap_uri", help="URI of the proxy of the mocap system object", type=str, default=None)
+        parser.add_argument("-a", "--activation_fn", help="Activation function for the hidden layers [Tanh,ReLU, LeakyReLU, ELU].", type=str, default="LeakyReLU")
         parser.add_argument('--motion_clip_folder', help='path of the motion clip folder', type=str, default='')
         parser.add_argument('--motion_clip_name', help='Name of the motion clip interpolation file.', type=str, default='')
         parser.add_argument("--wandb", help='If present as an arg the model will be downloaded from wandb directly.', action='store_true')
@@ -57,6 +58,7 @@ class LaptopPolicy:
         parser.add_argument("--use_mocap", help="Flag to use the mocap lab in the policy observations.", action='store_true')
         parser.add_argument("--base_state_matching", help="Matches initial base state with the reference, only in sim.",
                             action='store_true')
+        parser.add_argument("--obs_action_hist", help="Add actions history in the observations.", type=int, default=0)
         parser.add_argument("--hdw_com_issue", help="Adds a fixed Com observation [0.012731, 0.002186, 1.000515]"
                                                     "like what is cimputed on the hdw to simulate ir.", action='store_true')
         parser.add_argument("--remove_robot_com_in_obs", help="Flag to remove robot CoM in observations",
@@ -134,8 +136,9 @@ class LaptopPolicy:
         # self.ini_orn = self.ini_base_state[3:]
 
     def get_policy(self):
-        ob_dim = self.args.ob_dim
-        self.policy = ImitationPolicy(self.args, folder=self.test_data_folder, ob_dim=ob_dim)
+        ob_dim = self.args.ob_dim             
+        self.policy = ImitationPolicy(self.args, folder=self.test_data_folder, ob_dim=ob_dim,
+                                      activation_fn_name=self.args.activation_fn)
 
     def get_obs_parser(self):
         self.obs_parser = HdwMotionImitationObservationParser(self.robot, self.args, self.policy,
@@ -193,6 +196,7 @@ class LaptopPolicy:
         self.data["mocap_sys_data"].append(list(mocap_sys_data.flatten()))
 
     def write_data_to_csv(self):
+        # TODO add the non normalized obs to the data buffer and save as csv obs_buffer
         folder = f"{self.test_data_folder}/imitation_controller-{datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}"
         os.makedirs(folder)
         for data_name in self.data.keys():
@@ -326,7 +330,11 @@ class LaptopPolicy:
         while frame < self.motion_clip_parser.motion_clip_sim_frames:
             # Inference loop.
             t0 = time.time()
-            obs_np = self.obs_parser.observe(target_frame=frame)  # REMOTE
+            # Action history computed from the last actions
+            action_hist = self.compute_action_history()
+            obs_np = self.obs_parser.observe(target_frame=frame,
+                                             action_history=action_hist) 
+            # REMOTE
             # print(f"SENSOR DATA at time = {t0}:{self.obs_parser.robot_data}")
             action_np = self.policy.inference(obs_np,  std=[0.1,0.3,0.3]*4)
             self.action_bridge.set_mean(new_mean=list(self.motion_clip_parser.motion_clip["Interp_Motion_Data"][frame][-12:]))
@@ -354,10 +362,14 @@ class LaptopPolicy:
         #input("PROCEED TO MOTION CLIP TRACKING ON HDW?")
         frame = 0
         #for _ in range(100):
-        while frame < 0.1*self.motion_clip_parser.motion_clip_sim_frames:
+        while frame < self.motion_clip_parser.motion_clip_sim_frames:
             # Inference loop.
             t0 = time.time()
-            obs_np = self.obs_parser.observe(target_frame=frame)  # REMOTE
+            # Action history computed from the last actions
+            action_hist = self.compute_action_history()
+            obs_np = self.obs_parser.observe(target_frame=frame,
+                                             action_history=action_hist) 
+            # REMOTE
             # Mocap lab
             if self.args.use_mocap:
                 # Gets the data from the mocap system
@@ -407,6 +419,26 @@ class LaptopPolicy:
         if len(self.data["obs"]) > 0:
             filter_obs = (obs + np.array(self.data["obs"][-1]))/2.0
         return filter_obs
+    
+    def compute_action_history(self):
+        """
+         Adds the action history to the action_robot
+        """
+        action_hist = None
+        if self.args.obs_action_hist > 0: # if there is action history
+            action_hist_size = 12*self.args.obs_action_hist
+            n =12
+            action_hist = np.zeros((1, action_hist_size))
+            k = -1
+            n_action = len(self.data["action_robot"])
+            while n_action + k >= 0 and self.args.obs_action_hist + k >= 0:
+                # Better to use positive indexes when doing slicing
+                end = action_hist_size+(k+1)*n-1
+                start = end - (n-1)
+                # you cannot access the last element of the array with -1 when doing slicing as the last is excluded
+                action_hist[:, start:end+1] = np.array(self.data["action_robot"][n_action+k])
+                k -= 1
+        return action_hist
 
 
 # Client loop.
