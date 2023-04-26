@@ -42,6 +42,7 @@ class LaptopPolicy:
     def __init__(self):
         parser = argparse.ArgumentParser()
         parser.add_argument("-u", "--uri", help="URI of the proxy of the Policy object", type=str, default=None)
+        parser.add_argument("-ml", "--mocap_length", help="Percentage of mocap to play.", type=float, default=1.0)
         parser.add_argument("-mu", "--mocap_uri", help="URI of the proxy of the mocap system object", type=str, default=None)
         parser.add_argument("-a", "--activation_fn", help="Activation function for the hidden layers [Tanh,ReLU, LeakyReLU, ELU].", type=str, default="LeakyReLU")
         parser.add_argument('--motion_clip_folder', help='path of the motion clip folder', type=str, default='')
@@ -80,7 +81,9 @@ class LaptopPolicy:
         self.leg_bounds = None
         self.uri = None
         self.mocap_system_uri = None
+        # TODO add filtered observations
         self.data = {"obs": [],
+                     "obs_not_normalized": [],
                      "action_np": [],
                      "action_robot": [],
                      "control_times": [],
@@ -199,6 +202,9 @@ class LaptopPolicy:
         # TODO add the non normalized obs to the data buffer and save as csv obs_buffer
         folder = f"{self.test_data_folder}/imitation_controller-{datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}"
         os.makedirs(folder)
+        # adds other data in the buffer
+        self.data["obs_not_normalized"] = self.obs_parser.obs_buffer # non normalized obs
+        # saves the data generated during the inference loop
         for data_name in self.data.keys():
             save_single_data_to_csv(np.array(self.data[data_name]), data_name, folder)
 
@@ -362,7 +368,7 @@ class LaptopPolicy:
         #input("PROCEED TO MOTION CLIP TRACKING ON HDW?")
         frame = 0
         #for _ in range(100):
-        while frame < self.motion_clip_parser.motion_clip_sim_frames:
+        while frame < self.args.mocap_length*self.motion_clip_parser.motion_clip_sim_frames:
             # Inference loop.
             t0 = time.time()
             # Action history computed from the last actions
@@ -374,8 +380,8 @@ class LaptopPolicy:
             if self.args.use_mocap:
                 # Gets the data from the mocap system
                 mocap_sys_data = self.mocap_system.get_data()
-                mocap_sys_data = np.array(mocap_sys_data[0]).reshape((1,-1))# removes first dimension
-                print(f"Mocap system data: {mocap_sys_data}")
+                mocap_sys_data = np.array(mocap_sys_data).reshape((1,-1))# removes first dimension
+                print(f"Received mocap system data: {mocap_sys_data}")
                 obs_np = self.update_obs_with_mocap_data(obs_np, mocap_sys_data)
             else:
                 mocap_sys_data = np.array([0])
@@ -390,7 +396,7 @@ class LaptopPolicy:
             self.smooth_control(starting_motor_angles=self.obs_parser.robot_data[3:3+12],
                                 target_jp=action_robot,
                                 nsteps=20,
-                                dt=0.003)
+                                dt=0.001)
             delta = time.time() - t0
             print(f"Control time: {delta}")
             # dframe = int(delta/REF_FRAME_RATE) + 1
