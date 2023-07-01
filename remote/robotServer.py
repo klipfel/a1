@@ -26,6 +26,7 @@ parser.add_argument("--kd_list", help='Derivative gain list.', nargs='+', type=f
 parser.add_argument("--kp_list", help='Proportional gain list.', nargs='+', type=float)
 parser.add_argument("--kp", help='Proportional gain.', type=float, default=50.0)
 parser.add_argument("--kd", help='Derivative gain.', type=float, default=2.0)
+parser.add_argument("--sim_dt", help='Simulation step time.', type=float, default=0.001)
 parser.add_argument("--ip_host", help='Host ip address, where the Pyro deamon will be called and where the name server'
                                  'should be instanciated, it should an IP address on the host.', type=str, default="192.168.123.12")
 parser.add_argument("--ns_ip_host", help='Host ip address of the Name Server in Pyro', type=str, default="192.168.123.24")
@@ -47,7 +48,7 @@ else:
     from motion_imitation.robots import a1, robot_config  # for sim
 
 # basics constants
-CONTROL_SIM_RATE = 0.001 #0.0001 # sim 0.001, latency 0.001
+CONTROL_SIM_RATE = args.sim_dt #0.0001 # sim 0.001, latency 0.001
 HDW_RESET_TIME_STEP = 0.002  # used for pybullet to reset a1 to initial joint pose
 CONTROL_LATENCY_SIM = 0.00
 # TODO are they their own time.sleep in their code

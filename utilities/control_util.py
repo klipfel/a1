@@ -1001,7 +1001,7 @@ class Policy:
 class ImitationPolicy(Policy):
 
     # TODO download the config file of the training so you can set hyperparameters based on that
-    def __init__(self, args, folder=None, ob_dim = 342, activation_fn_name = "LeakuReLU"):
+    def __init__(self, args, folder=None, ob_dim = 342, activation_fn_name = "LeakuReLU", architecture=[256,256]):
         self.folder = folder
         if args.wandb:
             # Use wandb to download the model
@@ -1030,7 +1030,7 @@ class ImitationPolicy(Policy):
         self.ob_dim = ob_dim
         print(f"Input dimension of the policy : {self.ob_dim}")
         self.act_dim = 12
-        self.architecture = [256, 256]
+        self.architecture = architecture
         # Load policy net.
         if activation_fn_name == "Tanh":
             activation_fn = nn.Tanh
@@ -1571,7 +1571,58 @@ class HdwMotionImitationObservationParser(MotionImitationObservationParser):
     def get_robot_data(self):
         sensor_data_list = self.robot.get_sensor_data()
         sensor_data_np = np.array(sensor_data_list, dtype=np.float32)
-        sensor_data_np = self.disturb_obs(obs=sensor_data_np,
-                         com_flag=self.args.hdw_com_issue)
-        sensor_data_np = self.adapt_observations(obs=sensor_data_np)
+        #sensor_data_np = self.disturb_obs(obs=sensor_data_np,
+        #                 com_flag=self.args.hdw_com_issue)
+        #sensor_data_np = self.adapt_observations(obs=sensor_data_np)
         self.robot_data = sensor_data_np
+
+    def observe(self, target_frame=0, action_history=None, ):
+        # Rel ino
+        # Remove rel info
+        rel_info = np.zeros((1, 36*3))
+        # Gets the robot data
+        self.get_robot_data()
+        # Gets the reference data
+        self.get_reference_data(target_frame=target_frame,
+                                obs_window=self.obs_window)
+        # Constitutes observations
+        if self.rel_info:
+            self.current_obs = np.concatenate((rel_info,
+                                               self.robot_data,
+                                               self.reference_data),
+                                               axis=None)
+        else:
+            self.current_obs = np.concatenate((self.robot_data,
+                                               self.reference_data),
+                                               axis=None)
+        # Adds the action history to the observation    
+        if action_history is not None:
+            self.current_obs = np.concatenate((self.current_obs,
+                                               action_history),
+                                               axis=None)
+        # float32 for pytorch.
+        self.obs = np.array([list(self.current_obs)], dtype=np.float64)
+        # Put observations array in one row for policy.
+        np.reshape(self.obs, (1, -1))
+        # Store obs.
+        self.obs_buffer.append(self.obs.flatten())  # flatten for logging.
+        self.obs = np.array(list(self.obs), dtype=np.float32)
+        return self.obs
+    
+    def do_normalize(self, obs):
+        """
+        Function to actually normalize observations. So observations can still be updated before
+        the normalization is done.
+        If observations are not normalized, the function returns the observations as they are.
+        """
+        # updates last obs if there are some modifications
+        self.obs_buffer.pop(-1)
+        self.obs_buffer.append(obs.flatten())
+        self.obs = obs
+        # Obs normalization.
+        if self.args.obs_normalization:
+            self.obsn = self.normalize(copy.deepcopy(obs))
+            self.obsn_buffer.append(self.obsn.flatten())  # flatten for logging.
+            self.obsn = np.array(list(self.obsn), dtype=np.float32)
+            return self.obsn
+        return obs
