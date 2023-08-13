@@ -24,6 +24,7 @@ Single file to run on the robot.
 parser = argparse.ArgumentParser()
 parser.add_argument("--kd_list", help='Derivative gain list.', nargs='+', type=float)
 parser.add_argument("--kp_list", help='Proportional gain list.', nargs='+', type=float)
+parser.add_argument("--lat_friction", help='lateral friction.', type=float, default=1.0)
 parser.add_argument("--kp", help='Proportional gain.', type=float, default=50.0)
 parser.add_argument("--kd", help='Derivative gain.', type=float, default=2.0)
 parser.add_argument("--sim_dt", help='Simulation step time.', type=float, default=0.001)
@@ -134,7 +135,7 @@ class RobotA1:
             p.setAdditionalSearchPath(pybullet_data.getDataPath())
             self.floor = p.loadURDF("plane.urdf")
             self.setFloorFrictions(pybullet_client=p,
-                                   lateral=1.0)
+                                   lateral=args.lat_friction)
             robot = a1.A1(pybullet_client=p,
                           on_rack=args.rack,
                           action_repeat=args.action_repeat,
